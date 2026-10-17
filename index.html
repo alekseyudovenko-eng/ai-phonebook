@@ -1,0 +1,1161 @@
+<title>ИИ Телефонная книга</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@500;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: a working address book — ask bar on top, alphabetical index on the left, the open card on the right. AI matches are marked like a highlighter pen. */
+:root {
+  --bg: #EDF0F3;
+  --surface: #FFFFFF;
+  --surface-2: #F5F7F9;
+  --ink: #15212B;
+  --muted: #5D6A77;
+  --line: #D8DEE4;
+  --accent: #0B6E69;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #DDEFEC;
+  --marker: #FFE27A;
+  --marker-ink: #3B2F00;
+  --danger: #B42318;
+  --danger-soft: #FCE9E7;
+  --av-bg-l: 87%;
+  --av-fg-l: 24%;
+  --shadow: 0 1px 2px rgba(21,33,43,.06), 0 8px 24px rgba(21,33,43,.06);
+  --f-display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --f-body: "Golos Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E151B; --surface: #15202A; --surface-2: #1B2833; --ink: #E5ECF1; --muted: #93A2B0; --line: #2A3742;
+    --accent: #42B9AF; --accent-ink: #052220; --accent-soft: #173733; --marker: #5A4A10; --marker-ink: #FFE9A6;
+    --danger: #FF8A80; --danger-soft: #3B1D1A; --av-bg-l: 27%; --av-fg-l: 86%;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E151B; --surface: #15202A; --surface-2: #1B2833; --ink: #E5ECF1; --muted: #93A2B0; --line: #2A3742;
+  --accent: #42B9AF; --accent-ink: #052220; --accent-soft: #173733; --marker: #5A4A10; --marker-ink: #FFE9A6;
+  --danger: #FF8A80; --danger-soft: #3B1D1A; --av-bg-l: 27%; --av-fg-l: 86%;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 18px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 14px; }
+
+/* Header */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.brand h1 { font-family: var(--f-display); font-weight: 700; font-size: 22px; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+.count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-weight: 500; font-size: 14px; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.ghost:hover { background: var(--surface-2); }
+.btn.danger { color: var(--danger); }
+.btn.danger.solid { background: var(--danger); color: var(--surface); border-color: var(--danger); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn svg { width: 16px; height: 16px; flex: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Ask bar */
+.ask { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 8px; display: flex; gap: 8px; align-items: center; }
+.ask input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 10px 10px; font-size: 17px; outline: none; }
+.ask .kbd { font-family: var(--f-mono); font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+.ask .btn.primary { padding: 10px 14px; }
+.hint { color: var(--muted); font-size: 13px; display: flex; gap: 6px 14px; flex-wrap: wrap; }
+.hint button { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* Filters */
+.filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.filters .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-right: 4px; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.chip .n { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 4px; font-size: 12px; }
+.chip[aria-pressed="true"] .n { color: inherit; opacity: .8; }
+
+/* AI answer */
+.answer { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--marker); border-radius: var(--r); padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.answer p { margin: 0; max-width: 72ch; }
+.answer .q { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.thinking { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); }
+.thinking i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+.thinking i:nth-child(2) { animation-delay: .2s; } .thinking i:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+/* Main */
+.main { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.pane { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); min-width: 0; }
+.listpane { position: sticky; top: 12px; max-height: calc(100dvh - 24px); overflow: auto; }
+.letter { position: sticky; top: 0; background: var(--surface-2); color: var(--muted); font-family: var(--f-display); font-size: 12px; font-weight: 500; padding: 4px 14px; border-bottom: 1px solid var(--line); z-index: 1; }
+.row { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--line); cursor: pointer; width: 100%; text-align: left; background: transparent; border-left: 0; border-right: 0; border-top: 0; }
+.row:hover { background: var(--surface-2); }
+.row[aria-current="true"] { background: var(--accent-soft); }
+.row .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .sub { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .why { font-size: 13px; margin-top: 3px; }
+.mark { background: var(--marker); color: var(--marker-ink); padding: 0 3px; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 13px; background: hsl(var(--h) 42% var(--av-bg-l)); color: hsl(var(--h) 55% var(--av-fg-l)); flex: none; }
+.av.lg { width: 64px; height: 64px; font-size: 22px; font-family: var(--f-display); font-weight: 500; }
+.empty { padding: 28px 20px; color: var(--muted); text-align: center; display: grid; gap: 10px; justify-items: center; }
+.empty h3 { margin: 0; color: var(--ink); font-family: var(--f-display); font-weight: 500; font-size: 16px; }
+
+/* Detail */
+.detail { padding: 22px; display: grid; gap: 18px; }
+.dhead { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.dhead .t { min-width: 0; flex: 1; }
+.dhead h2 { font-family: var(--f-display); font-weight: 500; font-size: 22px; margin: 0; line-height: 1.2; text-wrap: balance; overflow-wrap: anywhere; }
+.dhead .pos { color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; }
+.dactions { display: flex; gap: 6px; flex-wrap: wrap; }
+.fields { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px 16px; margin: 0; }
+.fields dt { color: var(--muted); font-size: 13px; padding-top: 3px; text-transform: uppercase; letter-spacing: .05em; font-size: 11px; }
+.fields dd { margin: 0; display: grid; gap: 4px; min-width: 0; }
+.val { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.val .tx { overflow-wrap: anywhere; user-select: all; }
+.mono { font-family: var(--f-mono); font-size: 14px; font-variant-numeric: tabular-nums; }
+.copy { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px; border-radius: 4px; display: inline-grid; }
+.copy:hover { color: var(--accent); background: var(--surface-2); }
+.copy svg { width: 15px; height: 15px; }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 8px; font-size: 13px; }
+.section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+.notes { white-space: pre-wrap; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin: 0; overflow-wrap: anywhere; }
+.hist { display: grid; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
+.hist li { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; }
+.hist .d { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.hist .x { overflow-wrap: anywhere; }
+.addhist { display: flex; gap: 8px; flex-wrap: wrap; }
+.addhist input[type="text"] { flex: 1 1 220px; min-width: 0; }
+.meta { color: var(--muted); font-size: 12px; }
+.confirm { background: var(--danger-soft); border-radius: 8px; padding: 10px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.closer { display: none; }
+img.av { object-fit: cover; background: var(--surface-2); }
+.avbtn { border: 0; padding: 0; background: none; cursor: pointer; border-radius: 50%; position: relative; }
+.avbtn::after { content: "Фото"; position: absolute; inset: auto 0 -2px 0; font-size: 10px; text-align: center; color: var(--accent-ink); background: var(--accent); border-radius: 6px; opacity: 0; transition: opacity .15s; }
+.avbtn:hover::after, .avbtn:focus-visible::after { opacity: 1; }
+.web { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
+.web .facts { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.src { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.src a { color: var(--muted); }
+.badge { display: inline-block; font-size: 11px; border-radius: 999px; padding: 1px 8px; font-weight: 600; letter-spacing: .02em; }
+.badge.high { background: var(--accent-soft); color: var(--accent); }
+.badge.medium { background: var(--marker); color: var(--marker-ink); }
+.badge.low { background: var(--danger-soft); color: var(--danger); }
+.log { font-family: var(--f-mono); font-size: 12px; color: var(--muted); background: var(--surface-2); border-radius: 8px; padding: 8px 10px; max-height: 140px; overflow: auto; display: grid; gap: 2px; }
+.log span { overflow-wrap: anywhere; }
+.upd { display: grid; gap: 6px; }
+.upd label { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.upd .was { color: var(--muted); text-decoration: line-through; font-size: 13px; }
+.upd .now { font-weight: 600; overflow-wrap: anywhere; }
+.upd .k { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+
+/* Forms */
+.field { display: grid; gap: 4px; }
+.field label { font-size: 12px; color: var(--muted); }
+input[type="text"], input[type="date"], input[type="search"], select, textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+textarea { resize: vertical; min-height: 70px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.grid2 .wide { grid-column: 1 / -1; }
+
+/* Modal */
+.overlay { position: fixed; inset: 0; background: rgba(10,16,22,.45); display: grid; place-items: center; padding: 16px; padding-top: calc(16px + env(safe-area-inset-top, 0px)); padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 50; }
+.modal { background: var(--surface); border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.3); width: min(680px, 100%); max-height: 100%; overflow: auto; padding: 20px; display: grid; gap: 14px; }
+.modal h2 { font-family: var(--f-display); font-weight: 500; font-size: 18px; margin: 0; }
+.modal .foot { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.tabs button { border: 0; background: none; padding: 8px 10px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 500; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 20px; text-align: center; color: var(--muted); display: grid; gap: 8px; justify-items: center; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; max-height: 300px; }
+.tbl table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.tbl th, .tbl td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl th { position: sticky; top: 0; background: var(--surface-2); font-weight: 600; }
+.note { font-size: 13px; color: var(--muted); }
+.out { white-space: pre-wrap; background: var(--surface-2); border-radius: 8px; padding: 12px; min-height: 120px; overflow-wrap: anywhere; }
+
+.banner { background: var(--marker); color: var(--marker-ink); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; z-index: 60; font-size: 14px; max-width: calc(100% - 32px); }
+
+@media (max-width: 899px) {
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .listpane { position: static; max-height: none; }
+  .detailpane { position: fixed; inset: 0; z-index: 40; border-radius: 0; overflow: auto; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+  .detailpane[data-open="false"] { display: none; }
+  .closer { display: inline-flex; }
+  .fields { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  .fields dd { margin-bottom: 8px; }
+  .grid2 { grid-template-columns: minmax(0, 1fr); }
+  .hist li { grid-template-columns: minmax(0, 1fr) auto; }
+  .hist .d { grid-column: 1 / -1; }
+}
+@media (min-width: 900px) { .detailpane[data-open="false"] .detail { display: none; } }
+@media (prefers-reduced-motion: reduce) { .thinking i { animation: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><h1>ИИ Телефонная книга</h1><span class="count" id="count"></span></div>
+    <div class="actions">
+      <button class="btn primary" id="btnAdd" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Добавить</button>
+      <button class="btn" id="btnImport" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Импорт</button>
+      <button class="btn" id="btnExport" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>Экспорт</button>
+      <button class="btn" id="btnEnrich" type="button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>Дополнить ИИ</button>
+    </div>
+  </header>
+
+  <div id="banner"></div>
+
+  <form class="ask" id="askForm" autocomplete="off">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color:var(--muted);margin-left:6px;flex:none"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="q" type="search" placeholder="Имя, компания, страна — или вопрос: кто у меня занимается биодизелем?" aria-label="Поиск по контактам">
+    <span class="kbd" id="kbdHint" hidden>Enter — спросить ИИ</span>
+    <button class="btn primary" id="btnAsk" type="submit" hidden>Спросить ИИ</button>
+  </form>
+  <div class="hint" id="examples" hidden>
+    <span>Попробуйте:</span>
+    <button type="button" data-ex="Кто из контактов связан с биотопливом или биодизелем?">биотопливо</button>
+    <button type="button" data-ex="Кто отвечает за продажи или закупки?">продажи и закупки</button>
+    <button type="button" data-ex="Кто работает в госструктурах или посольствах?">госструктуры</button>
+    <button type="button" data-ex="С кем я давно не связывался?">давно не связывался</button>
+  </div>
+
+  <div id="answer"></div>
+  <div class="filters" id="filters"></div>
+
+  <div class="main">
+    <section class="pane listpane" id="list" aria-label="Список контактов"></section>
+    <section class="pane detailpane" id="detailpane" data-open="false" aria-label="Карточка контакта"><div id="detail"></div></section>
+  </div>
+</div>
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const norm = s => String(s ?? "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+
+const state = { contacts: [], byId: new Map(), selected: null, q: "", country: "", tag: "", ai: null, demo: false, loaded: false, confirmDelete: false };
+let db = null, col = null, sample = null, downloads = null, aiCtl = null, mcp = null, assets = null, browserOK = false, browserTab = null;
+const BROWSER = "host:claude_browser";
+
+/* ---------- Contact helpers ---------- */
+const arr = v => Array.isArray(v) ? v.filter(Boolean).map(String) : (v ? String(v).split(/\s*[\n;]\s*|\s*,\s*(?=[^\s])/).filter(Boolean) : []);
+function clean(c) {
+  return {
+    name: String(c.name || "").replace(/\s+/g, " ").trim(),
+    company: String(c.company || "").trim(),
+    position: String(c.position || "").trim(),
+    phones: [...new Set(arr(c.phones).map(s => s.trim()).filter(Boolean))],
+    emails: [...new Set(arr(c.emails).map(s => s.trim().toLowerCase()).filter(s => s.includes("@")))],
+    country: String(c.country || "").trim(),
+    city: String(c.city || "").trim(),
+    links: [...new Set(arr(c.links).map(s => s.trim()).filter(Boolean))],
+    tags: [...new Set(arr(c.tags).map(s => s.trim()).filter(Boolean))],
+    notes: String(c.notes || "").trim(),
+    history: Array.isArray(c.history) ? c.history.filter(h => h && h.text).map(h => ({ date: String(h.date || ""), text: String(h.text) })) : [],
+    source: String(c.source || "").trim(),
+    photoId: /^[A-Za-z0-9_-]{8,64}$/.test(String(c.photoId || "")) ? String(c.photoId) : "",
+    research: c.research && typeof c.research === "object" ? {
+      at: String(c.research.at || ""), match: String(c.research.match || ""), summary: String(c.research.summary || "").slice(0, 1200),
+      facts: (Array.isArray(c.research.facts) ? c.research.facts : []).slice(0, 15).map(f => ({ text: String(f?.text || "").slice(0, 400), source: String(f?.source || "") })).filter(f => f.text),
+      photoPage: String(c.research.photoPage || ""),
+    } : null,
+  };
+}
+const initials = n => (n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?";
+function hue(s) { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.codePointAt(0)) >>> 0; return h % 360; }
+const avatar = (c, lg) => c.photoId
+  ? `<img class="av${lg ? " lg" : ""}" src="/_blob/${esc(c.photoId)}" alt="" onerror="this.removeAttribute('src');this.alt='';this.style.visibility='hidden'">`
+  : `<span class="av${lg ? " lg" : ""}" style="--h:${hue(c.name || c.company)}" aria-hidden="true">${esc(initials(c.name || c.company))}</span>`;
+const host = u => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+const srcLink = u => /^https?:\/\//i.test(u) ? `<span class="src">— <a href="${esc(u)}" target="_blank" rel="noopener">${esc(host(u))}</a></span>` : (u ? `<span class="src">— ${esc(u)}</span>` : "");
+const MATCH = { high: "совпадение уверенное", medium: "совпадение вероятное", low: "совпадение сомнительное" };
+const lastTouch = c => (c.history || []).map(h => h.date).filter(Boolean).sort().pop() || "";
+const hay = c => norm([c.name, c.company, c.position, c.country, c.city, ...(c.phones || []), ...(c.emails || []), ...(c.tags || []), ...(c.links || []), c.notes, ...(c.history || []).map(h => h.text)].join(" "));
+const today = () => new Date().toISOString().slice(0, 10);
+const fmtDate = d => { if (!d) return ""; const [y, m, dd] = d.split("-"); return dd && m && y ? `${dd}.${m}.${y}` : d; };
+
+function indexContacts(list) {
+  state.contacts = list.slice().sort((a, b) => (a.name || a.company || "").localeCompare(b.name || b.company || "", "ru"));
+  state.byId = new Map(state.contacts.map(c => [c.id, c]));
+  for (const c of state.contacts) c._hay = hay(c);
+  if (state.selected && !state.byId.has(state.selected)) state.selected = null;
+}
+
+/* ---------- Example data (only when storage is unavailable) ---------- */
+const EXAMPLES = [
+  { id: "ex1", name: "Анна Примерова", company: "Пример Ойл", position: "Директор по закупкам", phones: ["+7 900 000-00-01"], emails: ["anna@example.com"], country: "Россия", city: "Москва", tags: ["пример", "закупки"], notes: "Пример контакта — так выглядит карточка.", history: [{ date: "2026-09-12", text: "Встреча на выставке" }], source: "Пример" },
+  { id: "ex2", name: "Bekzod Example", company: "Example Foods", position: "Head of Procurement", phones: ["+998 90 000 00 02"], emails: ["bekzod@example.uz"], country: "Узбекистан", city: "Ташкент", tags: ["пример", "кондитерка"], notes: "", history: [], source: "Пример" },
+  { id: "ex3", name: "Lena Muster", company: "Muster GmbH", position: "Sales Manager", phones: ["+43 1 000 0003"], emails: ["lena@muster.example"], country: "Австрия", city: "Вена", tags: ["пример"], notes: "", history: [], source: "Пример" },
+];
+
+/* ---------- Storage ---------- */
+async function saveContact(data, id) {
+  const now = Date.now();
+  const prev = id ? state.byId.get(id) : null;
+  const body = { ...clean(data), createdAt: prev?.createdAt || now, updatedAt: now };
+  if (state.demo) {
+    const nid = id || "ex" + now;
+    const list = state.contacts.filter(c => c.id !== nid).map(stripPriv);
+    list.push({ id: nid, ...body });
+    indexContacts(list); render();
+    return nid;
+  }
+  const ref = id ? col.doc(id) : col.doc();
+  await ref.set(body);
+  return ref.id;
+}
+async function removeContact(id) {
+  if (state.demo) { indexContacts(state.contacts.filter(c => c.id !== id).map(stripPriv)); render(); return; }
+  await col.doc(id).delete();
+}
+function stripPriv(c) { const o = { ...c }; delete o._hay; return o; }
+
+/* ---------- Rendering ---------- */
+function filtered() {
+  let list = state.contacts;
+  if (state.country) list = list.filter(c => c.country === state.country);
+  if (state.tag) list = list.filter(c => (c.tags || []).includes(state.tag));
+  if (state.ai && !state.ai.loading && !state.ai.error) {
+    const order = new Map(state.ai.matches.map((m, i) => [m.id, i]));
+    return list.filter(c => order.has(c.id)).sort((a, b) => order.get(a.id) - order.get(b.id));
+  }
+  const toks = norm(state.q).split(" ").filter(Boolean);
+  if (toks.length) list = list.filter(c => toks.every(t => c._hay.includes(t)));
+  return list;
+}
+
+function render() {
+  const n = state.contacts.length;
+  $("#count").textContent = state.loaded ? `${n} ${plural(n, "контакт", "контакта", "контактов")}` : "";
+  renderBanner(); renderAnswer(); renderFilters(); renderList(); renderDetail();
+}
+function plural(n, a, b, c) { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; }
+
+function renderBanner() {
+  $("#banner").innerHTML = state.demo
+    ? `<div class="banner">Хранилище недоступно в этом окне, поэтому показаны примеры. Изменения не сохранятся — откройте страницу в Claude, войдя в свой аккаунт.</div>` : "";
+}
+
+function renderAnswer() {
+  const el = $("#answer"), a = state.ai;
+  if (!a) { el.innerHTML = ""; return; }
+  let body;
+  if (a.loading) body = `<span class="thinking"><i></i><i></i><i></i>&nbsp;Ищу по смыслу…</span>`;
+  else if (a.error) body = `<p>${esc(a.error)}</p>`;
+  else body = `<p>${esc(a.answer || (a.matches.length ? "" : "Подходящих контактов не нашлось."))}</p>`;
+  el.innerHTML = `<div class="answer"><div><div class="q">ИИ: «${esc(a.q)}»</div>${body}</div>
+    <button class="btn ghost" type="button" id="btnClearAI">${a.loading ? "Стоп" : "Сбросить"}</button></div>`;
+  $("#btnClearAI").onclick = () => { aiCtl?.abort(); state.ai = null; render(); };
+}
+
+function renderFilters() {
+  const el = $("#filters");
+  if (!state.contacts.length) { el.innerHTML = ""; return; }
+  const cnt = key => { const m = new Map(); for (const c of state.contacts) for (const v of [].concat(c[key] || [])) if (v) m.set(v, (m.get(v) || 0) + 1); return [...m].sort((a, b) => b[1] - a[1]); };
+  const countries = cnt("country").slice(0, 8), tags = cnt("tags").slice(0, 10);
+  const chip = (kind, v, n) => `<button type="button" class="chip" data-k="${kind}" data-v="${esc(v)}" aria-pressed="${state[kind] === v}">${esc(v)}<span class="n">${n}</span></button>`;
+  el.innerHTML = (countries.length ? `<span class="lbl">Страна</span>${countries.map(([v, n]) => chip("country", v, n)).join("")}` : "")
+    + (tags.length ? `<span class="lbl" style="margin-left:10px">Теги</span>${tags.map(([v, n]) => chip("tag", v, n)).join("")}` : "");
+  $$(".chip", el).forEach(b => b.onclick = () => { const k = b.dataset.k; state[k] = state[k] === b.dataset.v ? "" : b.dataset.v; render(); });
+}
+
+function renderList() {
+  const el = $("#list");
+  if (!state.loaded) { el.innerHTML = `<div class="empty"><span class="thinking"><i></i><i></i><i></i></span>Открываю книгу…</div>`; return; }
+  if (!state.contacts.length) {
+    el.innerHTML = `<div class="empty"><h3>Книга пока пуста</h3><div>Добавьте контакт вручную, вставьте подпись из письма или загрузите файл CSV, Excel или vCard.</div>
+      <div class="actions"><button class="btn primary" type="button" data-act="add">Добавить контакт</button><button class="btn" type="button" data-act="import">Импорт</button></div></div>`;
+    $$("[data-act]", el).forEach(b => b.onclick = () => b.dataset.act === "add" ? openEditor() : openImport());
+    return;
+  }
+  const list = filtered();
+  if (!list.length) { el.innerHTML = `<div class="empty"><h3>Ничего не найдено</h3><div>Попробуйте другой запрос${sample ? " или спросите ИИ — он ищет по смыслу" : ""}.</div></div>`; return; }
+  const ai = state.ai && !state.ai.loading && !state.ai.error;
+  const why = ai ? new Map(state.ai.matches.map(m => [m.id, m.why])) : null;
+  let html = "", last = null;
+  for (const c of list) {
+    if (!ai) {
+      const L = (c.name || c.company || "#")[0].toUpperCase();
+      const letter = /\p{L}/u.test(L) ? L : "#";
+      if (letter !== last) { html += `<div class="letter">${esc(letter)}</div>`; last = letter; }
+    }
+    const sub = [c.position, c.company].filter(Boolean).join(" · ") || c.emails?.[0] || c.phones?.[0] || "";
+    html += `<button type="button" class="row" data-id="${esc(c.id)}" aria-current="${state.selected === c.id}">${avatar(c)}
+      <span style="min-width:0"><span class="nm" style="display:block">${esc(c.name || c.company || "Без имени")}</span>
+      <span class="sub" style="display:block">${esc(sub)}${c.country ? " — " + esc(c.country) : ""}</span>
+      ${ai && why.get(c.id) ? `<span class="why" style="display:block"><span class="mark">${esc(why.get(c.id))}</span></span>` : ""}</span></button>`;
+  }
+  el.innerHTML = html;
+  $$(".row", el).forEach(b => b.onclick = () => { state.selected = b.dataset.id; state.confirmDelete = false; render(); });
+}
+
+function copyBtn(text) { return `<button type="button" class="copy" data-copy="${esc(text)}" title="Скопировать" aria-label="Скопировать">${ICON_COPY}</button>`; }
+
+function renderDetail() {
+  const pane = $("#detailpane"), el = $("#detail");
+  const c = state.selected && state.byId.get(state.selected);
+  pane.dataset.open = c ? "true" : "false";
+  if (!c) {
+    el.innerHTML = state.contacts.length ? `<div class="empty" style="padding:60px 20px"><h3>Выберите контакт</h3><div>Или спросите книгу в строке сверху — например, «кто у меня из Австрии в упаковке».</div></div>` : "";
+    if (window.innerWidth >= 900) pane.dataset.open = "true";
+    return;
+  }
+  const row = (label, vals, mono) => vals && vals.length ? `<dt>${label}</dt><dd>${vals.map(v => `<span class="val"><span class="tx${mono ? " mono" : ""}">${esc(v)}</span>${copyBtn(v)}</span>`).join("")}</dd>` : "";
+  const links = (c.links || []).map(l => { const u = /^https?:\/\//i.test(l) ? l : (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(l) ? "https://" + l : ""); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(l)}</a>` : esc(l); });
+  const place = [c.city, c.country].filter(Boolean).join(", ");
+  const hist = (c.history || []).map((h, i) => ({ ...h, i })).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  el.innerHTML = `<div class="detail">
+    <div class="dhead">${assets ? `<button type="button" class="avbtn" id="btnPhoto" title="Фото контакта" aria-label="Изменить фото">${avatar(c, true)}</button>` : avatar(c, true)}<div class="t"><h2>${esc(c.name || c.company || "Без имени")}</h2><div class="pos">${esc([c.position, c.company].filter(Boolean).join(" · "))}</div></div>
+      <button class="btn ghost closer" type="button" id="btnClose" aria-label="Закрыть">✕</button></div>
+    <div class="dactions">
+      ${sample ? `<button class="btn primary" type="button" id="btnWeb">${c.research ? "Обновить из интернета" : "Найти в интернете"}</button>` : ""}
+      <button class="btn" type="button" id="btnEdit">Изменить</button>
+      ${sample ? `<button class="btn" type="button" id="btnDraft">Написать письмо с ИИ</button>` : ""}
+      <button class="btn ghost danger" type="button" id="btnDel">Удалить</button>
+    </div>
+    ${state.confirmDelete ? `<div class="confirm"><span>Удалить ${esc(c.name || "контакт")} без возможности восстановления?</span><button class="btn danger solid" type="button" id="btnDelYes">Удалить</button><button class="btn" type="button" id="btnDelNo">Отмена</button></div>` : ""}
+    <dl class="fields">
+      ${row("Телефон", c.phones, true)}
+      ${row("Почта", c.emails, false)}
+      ${place ? `<dt>Где</dt><dd>${esc(place)}</dd>` : ""}
+      ${links.length ? `<dt>Ссылки</dt><dd>${links.map(l => `<span class="tx">${l}</span>`).join("")}</dd>` : ""}
+      ${(c.tags || []).length ? `<dt>Теги</dt><dd><span class="tags">${c.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</span></dd>` : ""}
+    </dl>
+    ${c.notes ? `<div class="section"><h3>Заметки</h3><p class="notes">${esc(c.notes)}</p></div>` : ""}
+    ${c.research ? `<div class="section"><h3>Из интернета · ${esc(fmtDate(c.research.at))}</h3><div class="web">
+      ${c.research.match ? `<div><span class="badge ${esc(c.research.match)}">${esc(MATCH[c.research.match] || c.research.match)}</span></div>` : ""}
+      ${c.research.summary ? `<p style="margin:0">${esc(c.research.summary)}</p>` : ""}
+      ${c.research.facts.length ? `<ul class="facts">${c.research.facts.map(f => `<li>${esc(f.text)}${srcLink(f.source)}</li>`).join("")}</ul>` : ""}
+      ${c.research.photoPage && !c.photoId ? `<div class="note">Фото есть на странице ${/^https?:\/\//i.test(c.research.photoPage) ? `<a href="${esc(c.research.photoPage)}" target="_blank" rel="noopener">${esc(host(c.research.photoPage))}</a>` : esc(c.research.photoPage)}. Сохраните его${assets ? " и нажмите на аватар, чтобы загрузить" : ""}.</div>` : ""}
+    </div></div>` : ""}
+    <div class="section"><h3>История общения</h3>
+      ${hist.length ? `<ul class="hist">${hist.map(h => `<li><span class="d">${esc(fmtDate(h.date))}</span><span class="x">${esc(h.text)}</span><button type="button" class="copy" data-delh="${h.i}" title="Удалить запись" aria-label="Удалить запись">✕</button></li>`).join("")}</ul>` : `<p class="note" style="margin:0 0 10px">Записей нет. Отмечайте встречи и звонки — ИИ будет учитывать их при поиске.</p>`}
+      <form class="addhist" id="histForm"><input type="date" id="hDate" value="${today()}" aria-label="Дата"><input type="text" id="hText" placeholder="Что обсуждали: встреча, звонок, договорённости" aria-label="Запись"><button class="btn" type="submit">Добавить</button></form>
+    </div>
+    <div class="meta">${c.source ? "Источник: " + esc(c.source) + " · " : ""}${c.updatedAt ? "Изменён " + new Date(c.updatedAt).toLocaleDateString("ru-RU") : ""}</div>
+  </div>`;
+  $$("[data-copy]", el).forEach(b => b.onclick = () => copyText(b.dataset.copy, b));
+  $("#btnClose").onclick = () => { state.selected = null; render(); };
+  $("#btnEdit").onclick = () => openEditor(c.id);
+  $("#btnWeb") && ($("#btnWeb").onclick = () => openResearch(c.id));
+  $("#btnPhoto") && ($("#btnPhoto").onclick = () => openPhoto(c.id));
+  $("#btnDraft") && ($("#btnDraft").onclick = () => openDraft(c.id));
+  $("#btnDel").onclick = () => { state.confirmDelete = true; renderDetail(); };
+  $("#btnDelYes") && ($("#btnDelYes").onclick = async () => { try { await removeContact(c.id); state.selected = null; state.confirmDelete = false; toast("Контакт удалён"); render(); } catch (e) { toast(dbErr(e)); } });
+  $("#btnDelNo") && ($("#btnDelNo").onclick = () => { state.confirmDelete = false; renderDetail(); });
+  $("#histForm").onsubmit = async ev => {
+    ev.preventDefault(); const text = $("#hText").value.trim(); if (!text) return;
+    const data = stripPriv(c); data.history = [...(c.history || []), { date: $("#hDate").value || today(), text }];
+    try { await saveContact(data, c.id); toast("Запись добавлена"); } catch (e) { toast(dbErr(e)); }
+  };
+  $$("[data-delh]", el).forEach(b => b.onclick = async () => {
+    const data = stripPriv(c); data.history = (c.history || []).filter((_, i) => i !== Number(b.dataset.delh));
+    try { await saveContact(data, c.id); } catch (e) { toast(dbErr(e)); }
+  });
+}
+
+async function copyText(t, btn) {
+  try { await navigator.clipboard.writeText(t); toast("Скопировано"); }
+  catch { const tx = btn?.previousElementSibling; if (tx) { const r = document.createRange(); r.selectNodeContents(tx); const s = getSelection(); s.removeAllRanges(); s.addRange(r); } toast("Выделено — нажмите Ctrl+C"); }
+}
+let toastT;
+function toast(msg) { const r = $("#toastRoot"); r.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toastT); toastT = setTimeout(() => r.innerHTML = "", 2600); }
+function dbErr(e) {
+  const c = e?.code;
+  if (c === "quota_exceeded") return "Хранилище заполнено — удалите ненужные контакты.";
+  if (c === "invalid_argument") return "Сохранять контакты может только владелец книги.";
+  if (c === "resource_exhausted") return "Слишком много изменений подряд — подождите немного.";
+  return "Не удалось сохранить. Проверьте соединение и попробуйте ещё раз.";
+}
+function aiErr(e) {
+  const c = e?.code;
+  if (c === "not_granted" || c === "sampling_disabled") return "ИИ не разрешён для этой страницы.";
+  if (c === "rate_limited") return "Слишком много запросов к ИИ. Попробуйте через минуту.";
+  if (c === "prompt_too_large") return "Слишком много данных для одного запроса — сузьте выборку фильтрами.";
+  if (c === "invalid_json") return "ИИ ответил в неожиданном формате. Попробуйте ещё раз.";
+  if (c === "session_expired") return "Сессия истекла — войдите в Claude заново.";
+  return "ИИ сейчас не отвечает. Попробуйте ещё раз.";
+}
+
+/* ---------- Modal ---------- */
+function openModal(html, onMount) {
+  const root = $("#modalRoot");
+  root.innerHTML = `<div class="overlay" id="ov"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;
+  $("#ov").addEventListener("mousedown", e => { if (e.target.id === "ov") closeModal(); });
+  onMount?.($(".modal", root));
+  $(".modal input, .modal textarea, .modal button", root)?.focus();
+}
+function closeModal() { modalCtl?.abort(); $("#modalRoot").innerHTML = ""; }
+let modalCtl = null;
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && $("#modalRoot").innerHTML) closeModal();
+  if (e.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) { e.preventDefault(); $("#q").focus(); }
+});
+
+/* ---------- Editor (add / edit, with AI parsing) ---------- */
+const FIELDS = [["name", "Имя и фамилия", "wide"], ["company", "Компания"], ["position", "Должность"], ["phones", "Телефоны (по одному в строке)", "", "ta"], ["emails", "Почта (по одной в строке)", "", "ta"], ["country", "Страна"], ["city", "Город"], ["links", "Сайт, LinkedIn, Telegram", "wide"], ["tags", "Теги через запятую", "wide"], ["notes", "Заметки", "wide", "ta"]];
+function openEditor(id, preset) {
+  const c = id ? state.byId.get(id) : (preset || {});
+  const v = k => Array.isArray(c[k]) ? c[k].join(k === "tags" || k === "links" ? ", " : "\n") : (c[k] || "");
+  const aiBlock = !id && sample ? `<div class="tabs" role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="form">Вручную</button><button type="button" role="tab" aria-selected="false" data-tab="paste">Из текста</button><button type="button" role="tab" aria-selected="false" data-tab="photo" id="tabPhoto" hidden>Фото визитки</button></div>
+    <div data-panel="paste" hidden class="field"><label for="pasteTx">Вставьте подпись из письма, текст визитки или сообщение — ИИ разложит по полям</label><textarea id="pasteTx" rows="6" placeholder="Lena Muster&#10;Head of Key Account Management&#10;Muster Packaging GmbH, Wien, Austria&#10;lena.muster@example.com"></textarea><div class="foot" style="justify-content:flex-start"><button class="btn primary" type="button" id="btnParse">Разобрать</button><span class="note" id="parseNote"></span></div></div>
+    <div data-panel="photo" hidden><div class="drop" id="photoDrop"><div>Перетащите фото визитки сюда</div><label class="btn"><input type="file" id="photoIn" accept="image/*" hidden>Выбрать фото</label><span class="note" id="photoNote"></span></div></div>` : "";
+  openModal(`<h2>${id ? "Изменить контакт" : "Новый контакт"}</h2>${aiBlock}
+    <form id="edForm" data-panel="form" class="grid2">${FIELDS.map(([k, l, w, t]) => `<div class="field ${w || ""}"><label for="f_${k}">${l}</label>${t ? `<textarea id="f_${k}" rows="${k === "notes" ? 3 : 2}">${esc(v(k))}</textarea>` : `<input type="text" id="f_${k}" value="${esc(v(k))}">`}</div>`).join("")}
+    <div class="foot wide"><button class="btn" type="button" id="edCancel">Отмена</button><button class="btn primary" type="submit">Сохранить</button></div></form>`, m => {
+    $("#edCancel", m).onclick = closeModal;
+    $$("[data-tab]", m).forEach(t => t.onclick = () => {
+      $$("[data-tab]", m).forEach(x => x.setAttribute("aria-selected", x === t));
+      $$("[data-panel]", m).forEach(p => p.hidden = p.dataset.panel !== t.dataset.tab);
+    });
+    if (sample && !id) {
+      sample.limits().then(l => { if (l?.images) { $("#tabPhoto", m).hidden = false; $("#photoIn", m).accept = l.images.mediaTypes.join(","); } }).catch(() => {});
+      $("#btnParse", m).onclick = async () => {
+        const tx = $("#pasteTx", m).value.trim(); if (!tx) return;
+        await aiFill(m, { text: tx }, $("#parseNote", m), $("#btnParse", m));
+      };
+      const pin = $("#photoIn", m), drop = $("#photoDrop", m);
+      const onImg = f => f && aiFill(m, { image: f }, $("#photoNote", m), null);
+      pin.onchange = () => onImg(pin.files[0]);
+      drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+      drop.ondragleave = () => drop.classList.remove("over");
+      drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); onImg(e.dataTransfer.files[0]); };
+    }
+    $("#edForm", m).onsubmit = async ev => {
+      ev.preventDefault();
+      const data = id ? stripPriv(c) : { source: c.source || "Вручную" };
+      for (const [k] of FIELDS) data[k] = $("#f_" + k, m).value;
+      data.tags = data.tags.split(",").map(s => s.trim()).filter(Boolean);
+      data.links = data.links.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+      data.phones = data.phones.split("\n"); data.emails = data.emails.split(/[\n,;]/);
+      if (!clean(data).name && !clean(data).company) { toast("Укажите имя или компанию"); return; }
+      try { const nid = await saveContact(data, id); state.selected = nid; closeModal(); toast(id ? "Сохранено" : "Контакт добавлен"); render(); }
+      catch (e) { toast(dbErr(e)); }
+    };
+  });
+}
+const PARSE_RULES = `Верни только JSON-объект вида {"name":"","company":"","position":"","phones":[],"emails":[],"country":"","city":"","links":[],"tags":[],"notes":""}.
+Правила: имя — как написано (латиницей, если так в источнике); страну и город пиши по-русски; телефоны с кодом страны, как в источнике; в tags — 1–2 слова об отрасли по-русски, если она ясна; в notes — важное, что не попало в поля (короче 200 символов). Не выдумывай: если поля нет — пустая строка или пустой массив.`;
+async function aiFill(m, { text, image }, noteEl, btn) {
+  modalCtl?.abort(); modalCtl = new AbortController();
+  noteEl.innerHTML = `<span class="thinking"><i></i><i></i><i></i>&nbsp;Разбираю…</span>`; if (btn) btn.disabled = true;
+  try {
+    const prompt = image ? `На фото — визитка или подпись. Извлеки контакт. ${PARSE_RULES}` : `Извлеки контакт из текста ниже. ${PARSE_RULES}\n\nТекст:\n"""\n${text.slice(0, 8000)}\n"""`;
+    const r = await sample.json(prompt, { modelTier: "quick", signal: modalCtl.signal, ...(image ? { images: [image] } : {}) });
+    const c = clean(r || {});
+    for (const [k] of FIELDS) { const el = $("#f_" + k, m); if (!el) continue; const v = c[k]; el.value = Array.isArray(v) ? v.join(k === "tags" || k === "links" ? ", " : "\n") : v; }
+    $$("[data-tab]", m)[0].click();
+    toast("Поля заполнены — проверьте и сохраните");
+    noteEl.textContent = "";
+  } catch (e) { if (e?.code !== "cancelled") noteEl.textContent = e?.code === "image_rejected" ? "Не удалось прочитать изображение — выберите другой файл." : aiErr(e); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+/* ---------- AI search ---------- */
+function contactLine(c) {
+  const em = (c.emails || []).map(e => e.split("@")[1]).join(",");
+  return [c.id, c.name, c.company, c.position, c.country, c.city, (c.tags || []).join(","), em, (c.notes || "").slice(0, 160), lastTouch(c), (c.history || []).slice(-2).map(h => h.text).join(" / ").slice(0, 160)]
+    .map(v => String(v || "").replace(/[|\n\r]+/g, " ")).join("|");
+}
+async function askAI(q) {
+  if (!sample || !q) return;
+  aiCtl?.abort(); aiCtl = new AbortController();
+  state.ai = { q, loading: true, matches: [] }; state.selected = null; render();
+  let pool = state.contacts;
+  if (state.country) pool = pool.filter(c => c.country === state.country);
+  if (state.tag) pool = pool.filter(c => (c.tags || []).includes(state.tag));
+  let lines = [], size = 0, cut = false;
+  for (const c of pool) { const l = contactLine(c); if (size + l.length > 180000) { cut = true; break; } lines.push(l); size += l.length + 1; }
+  const prompt = `Ты помогаешь искать в личной записной книжке деловых контактов. Сегодня ${today()}.
+Каждая строка — контакт, поля через «|»: id|имя|компания|должность|страна|город|теги|домены почты|заметки|дата последнего общения|последние записи.
+Вопрос пользователя: «${q}»
+Ищи по смыслу: учитывай отрасль компании (в т.ч. известные тебе компании и домены почты), синонимы, переводы должностей с английского и немецкого, страну по домену или телефонному коду. На вопросы о давности общения опирайся на дату последнего общения (пустая — не общались).
+Ответь только JSON: {"answer":"1–2 предложения по-русски: что нашлось","matches":[{"id":"…","why":"чем подходит, до 10 слов по-русски"}]}. До 25 контактов, самые подходящие первыми. id копируй точно. Если подходящих нет — пустой список.
+${cut ? "(Показана только часть книги — большая книга.)\n" : ""}
+Контакты:
+${lines.join("\n")}`;
+  try {
+    const r = await sample.json(prompt, { modelTier: "quick", signal: aiCtl.signal });
+    const matches = (Array.isArray(r?.matches) ? r.matches : []).filter(m => m && state.byId.has(String(m.id))).map(m => ({ id: String(m.id), why: String(m.why || "") }));
+    state.ai = { q, loading: false, answer: String(r?.answer || ""), matches };
+  } catch (e) {
+    if (e?.code === "cancelled") return;
+    state.ai = { q, loading: false, error: aiErr(e), matches: [] };
+  }
+  render();
+}
+
+/* ---------- Draft a message ---------- */
+function openDraft(id) {
+  const c = state.byId.get(id);
+  openModal(`<h2>Письмо: ${esc(c.name || c.company)}</h2>
+    <div class="grid2"><div class="field wide"><label for="dPurpose">О чём письмо</label><input type="text" id="dPurpose" placeholder="Например: пригласить на семинар по пальмовому маслу в Ташкенте в ноябре"></div>
+    <div class="field"><label for="dLang">Язык</label><select id="dLang"><option>английский</option><option>русский</option><option>немецкий</option></select></div>
+    <div class="field"><label for="dTone">Тон</label><select id="dTone"><option>деловой, тёплый</option><option>официальный</option><option>короткий</option></select></div></div>
+    <div class="out" id="dOut" aria-live="polite"><span class="note">Опишите цель и нажмите «Написать». ИИ учтёт должность, компанию и историю общения.</span></div>
+    <div class="foot"><button class="btn" type="button" id="dCopy" disabled>Скопировать</button><button class="btn" type="button" id="dClose">Закрыть</button><button class="btn primary" type="button" id="dGo">Написать</button></div>`, m => {
+    $("#dClose", m).onclick = closeModal;
+    $("#dLang", m).value = /росс|казах|узбек|кирги|беларус|таджик/i.test(c.country) ? "русский" : /австр|герман|швейц/i.test(c.country) ? "немецкий" : "английский";
+    $("#dCopy", m).onclick = () => copyText($("#dOut", m).textContent, null);
+    $("#dGo", m).onclick = async () => {
+      const purpose = $("#dPurpose", m).value.trim(); if (!purpose) { $("#dPurpose", m).focus(); return; }
+      modalCtl?.abort(); modalCtl = new AbortController();
+      const out = $("#dOut", m); out.innerHTML = `<span class="thinking"><i></i><i></i><i></i>&nbsp;Пишу…</span>`; $("#dGo", m).disabled = true;
+      const hist = (c.history || []).slice(-5).map(h => `${h.date}: ${h.text}`).join("\n") || "нет";
+      const prompt = `Напиши деловое письмо (тема + текст) от моего имени. Язык: ${$("#dLang", m).value}. Тон: ${$("#dTone", m).value}.
+Получатель: ${c.name || "—"}, ${c.position || "должность неизвестна"}, ${c.company || ""}, ${[c.city, c.country].filter(Boolean).join(", ")}.
+Заметки о нём: ${c.notes || "нет"}
+История общения:
+${hist}
+Цель письма: ${purpose}
+Формат: первая строка «Тема: …», затем пустая строка и текст. Без выдуманных фактов о получателе; подпись оставь как [Ваше имя].`;
+      try {
+        const { text } = await sample(prompt, { cache: false, signal: modalCtl.signal, onText: ({ text }) => { out.textContent = text; } });
+        out.textContent = text; $("#dCopy", m).disabled = false;
+      } catch (e) { if (e?.code !== "cancelled") out.textContent = (e?.text ? e.text + "\n\n" : "") + aiErr(e); }
+      finally { const b = $("#dGo", m); if (b) b.disabled = false; }
+    };
+  });
+}
+
+/* ---------- Import ---------- */
+function decode(buf) {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(buf).replace(/^\uFEFF/, ""); }
+  catch { return new TextDecoder("windows-1251").decode(buf); }
+}
+function parseCSV(text) {
+  const first = text.split(/\r?\n/)[0] || "";
+  const d = [";", ",", "\t"].map(x => [x, first.split(x).length]).sort((a, b) => b[1] - a[1])[0][0];
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === d) { row.push(f); f = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+    else f += ch;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.some(x => String(x).trim()));
+}
+function mapHeader(h) {
+  const s = norm(h);
+  if (/type|label|тип/.test(s) && !/^labels?$/.test(s)) return null;
+  if (/^(first.?name|given.?name|имя)$/.test(s)) return "first";
+  if (/^(middle.?name|additional.?name|отчество)$/.test(s)) return "middle";
+  if (/(last.?name|family.?name|фамилия|surname)/.test(s)) return "last";
+  if (/^(name|full.?name|display.?name|фио|контакт|имя и фамилия)$/.test(s)) return "name";
+  if (/(organi[sz]ation.?title|job.?title|position|должност|^title$)/.test(s)) return "position";
+  if (/(company|organi[sz]ation|компан|организац|^org)/.test(s)) return "company";
+  if (/(e-?mail|почта|^mail)/.test(s)) return "emails";
+  if (/(phone|tel|mobile|телефон|моб)/.test(s)) return "phones";
+  if (/(country|страна)/.test(s)) return "country";
+  if (/(city|город|locality)/.test(s)) return "city";
+  if (/(tag|group|labels?|теги|группа|категори)/.test(s)) return "tags";
+  if (/(url|website|site|сайт|link|linkedin|social)/.test(s)) return "links";
+  if (/(note|коммент|примеч|mention|описан)/.test(s)) return "notes";
+  return null;
+}
+function rowsToContacts(rows) {
+  if (rows.length < 2) return [];
+  const map = rows[0].map(mapHeader);
+  return rows.slice(1).map(r => {
+    const c = { phones: [], emails: [], links: [], tags: [], notes: [] }, nm = {};
+    r.forEach((v, i) => {
+      const k = map[i]; v = String(v ?? "").trim(); if (!k || !v) return;
+      const parts = v.split(/\s*:::\s*/);
+      if (k === "first" || k === "middle" || k === "last" || k === "name") nm[k] = v;
+      else if (k === "phones" || k === "emails" || k === "links") c[k].push(...parts.flatMap(p => k === "emails" ? p.split(/[;,\s]+/) : [p]));
+      else if (k === "tags") c.tags.push(...parts.flatMap(p => p.split(/[,;]/)).map(t => t.replace(/^\*\s*/, "").trim()).filter(t => t && !/^myContacts$/i.test(t)));
+      else if (k === "notes") c.notes.push(v);
+      else c[k] = c[k] ? c[k] : v;
+    });
+    c.name = nm.name || [nm.first, nm.middle, nm.last].filter(Boolean).join(" ");
+    c.notes = c.notes.join("\n");
+    return clean(c);
+  }).filter(c => c.name || c.company || c.emails.length);
+}
+function parseVCF(text) {
+  const lines = text.replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "").split(/\r?\n/);
+  const out = []; let c = null;
+  const val = l => l.slice(l.indexOf(":") + 1).replace(/\\n/gi, "\n").replace(/\\([,;\\])/g, "$1").trim();
+  for (const l of lines) {
+    const key = l.split(":")[0].split(";")[0].toUpperCase().replace(/^ITEM\d+\./, "");
+    if (key === "BEGIN") c = { phones: [], emails: [], links: [], tags: [] };
+    else if (key === "END" && c) { out.push(clean(c)); c = null; }
+    else if (!c) continue;
+    else if (key === "FN") c.name = val(l);
+    else if (key === "N" && !c.name) { const p = val(l).split(";"); c.name = [p[1], p[2], p[0]].filter(Boolean).join(" "); }
+    else if (key === "ORG") c.company = val(l).split(";").filter(Boolean).join(", ");
+    else if (key === "TITLE") c.position = val(l);
+    else if (key === "TEL") c.phones.push(val(l));
+    else if (key === "EMAIL") c.emails.push(val(l));
+    else if (key === "URL") c.links.push(val(l));
+    else if (key === "NOTE") c.notes = val(l);
+    else if (key === "CATEGORIES") c.tags.push(...val(l).split(","));
+    else if (key === "ADR") { const p = val(l).split(";"); c.city = c.city || p[3] || ""; c.country = c.country || p[6] || ""; }
+  }
+  return out.filter(c => c.name || c.company || c.emails.length);
+}
+async function readFile(file) {
+  const buf = await file.arrayBuffer();
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  if (ext === "vcf") return parseVCF(decode(buf));
+  if (ext === "xlsx" || ext === "xls") {
+    if (!window.XLSX) throw new Error("Excel-модуль не загрузился. Сохраните файл как CSV.");
+    const wb = XLSX.read(buf, { type: "array" });
+    return rowsToContacts(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" }));
+  }
+  const t = decode(buf);
+  if (/BEGIN:VCARD/i.test(t)) return parseVCF(t);
+  return rowsToContacts(parseCSV(t));
+}
+const dupKey = c => c.emails?.[0] ? "e:" + c.emails[0] : "n:" + norm(c.name) + "|" + norm(c.company);
+function openImport() {
+  openModal(`<h2>Импорт контактов</h2>
+    <div class="drop" id="impDrop"><div>Перетащите файл сюда: CSV, Excel или vCard (.vcf)</div><label class="btn"><input type="file" id="impIn" accept=".csv,.txt,.xlsx,.xls,.vcf" hidden>Выбрать файл</label>
+    <span class="note">Подойдут выгрузки из Google Контактов, Outlook, телефона и любые таблицы с колонками «имя», «компания», «телефон», «email».</span></div>
+    <div id="impPrev"></div>
+    <div class="foot"><button class="btn" type="button" id="impCancel">Отмена</button><button class="btn primary" type="button" id="impGo" disabled>Импортировать</button></div>`, m => {
+    let items = [];
+    $("#impCancel", m).onclick = closeModal;
+    const handle = async f => {
+      if (!f) return;
+      try { items = await readFile(f); } catch (e) { $("#impPrev", m).innerHTML = `<p class="note">${esc(e.message || "Не удалось прочитать файл.")}</p>`; return; }
+      const have = new Set(state.contacts.map(dupKey)); const seen = new Set();
+      items = items.map(c => { const k = dupKey(c); const dup = have.has(k) || seen.has(k); seen.add(k); return { ...c, _dup: dup, source: "Импорт: " + f.name }; });
+      const fresh = items.filter(c => !c._dup).length;
+      $("#impPrev", m).innerHTML = items.length ? `<p class="note">Найдено ${items.length}, новых ${fresh}${items.length - fresh ? `, ${items.length - fresh} уже есть в книге — их пропущу` : ""}.</p>
+        <div class="tbl"><table><thead><tr><th>Имя</th><th>Компания</th><th>Должность</th><th>Телефон</th><th>Почта</th></tr></thead><tbody>
+        ${items.slice(0, 200).map(c => `<tr style="${c._dup ? "opacity:.45" : ""}"><td>${esc(c.name)}</td><td>${esc(c.company)}</td><td>${esc(c.position)}</td><td class="mono">${esc(c.phones[0] || "")}</td><td>${esc(c.emails[0] || "")}</td></tr>`).join("")}</tbody></table></div>`
+        : `<p class="note">В файле не нашлось контактов. Проверьте, что в первой строке есть заголовки колонок.</p>`;
+      $("#impGo", m).disabled = !fresh;
+    };
+    const inp = $("#impIn", m), drop = $("#impDrop", m);
+    inp.onchange = () => handle(inp.files[0]);
+    drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+    drop.ondragleave = () => drop.classList.remove("over");
+    drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); handle(e.dataTransfer.files[0]); };
+    $("#impGo", m).onclick = async () => {
+      const todo = items.filter(c => !c._dup); const btn = $("#impGo", m); btn.disabled = true;
+      let done = 0, failed = 0;
+      for (let i = 0; i < todo.length; i += 4) {
+        await Promise.all(todo.slice(i, i + 4).map(async c => { const x = { ...c }; delete x._dup; try { await saveContact(x); done++; } catch { failed++; } }));
+        btn.textContent = `Сохраняю… ${done}/${todo.length}`;
+      }
+      closeModal(); toast(`Добавлено ${done}${failed ? `, не удалось ${failed}` : ""}`); render();
+    };
+  });
+}
+
+/* ---------- Export ---------- */
+function openExport() {
+  const list = filtered();
+  openModal(`<h2>Экспорт</h2><p class="note" style="margin:0">Будут выгружены ${list.length === state.contacts.length ? "все контакты" : `контакты из текущей выборки`} (${list.length}).</p>
+    <div class="foot" style="justify-content:flex-start"><button class="btn primary" type="button" data-fmt="csv">CSV для Excel</button><button class="btn" type="button" data-fmt="vcf">vCard для телефона</button><button class="btn" type="button" data-fmt="json">JSON-копия</button></div>
+    <p class="note" id="expNote" style="margin:0"></p><div class="foot"><button class="btn" type="button" id="expClose">Закрыть</button></div>`, m => {
+    $("#expClose", m).onclick = closeModal;
+    $$("[data-fmt]", m).forEach(b => b.onclick = async () => {
+      if (!downloads) { $("#expNote", m).textContent = "Сохранение файлов недоступно в этом окне."; return; }
+      const fmt = b.dataset.fmt, stamp = today();
+      let data;
+      if (fmt === "csv") {
+        const cols = ["name", "company", "position", "phones", "emails", "country", "city", "links", "tags", "notes"];
+        const cell = v => { v = Array.isArray(v) ? v.join(", ") : String(v ?? ""); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+        data = "\uFEFF" + ["Имя;Компания;Должность;Телефоны;Почта;Страна;Город;Ссылки;Теги;Заметки", ...list.map(c => cols.map(k => cell(c[k])).join(";"))].join("\r\n");
+      } else if (fmt === "vcf") {
+        const e = s => String(s || "").replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/([,;])/g, "\\$1");
+        data = list.map(c => ["BEGIN:VCARD", "VERSION:3.0", "FN:" + e(c.name || c.company), "N:" + e((c.name || "").split(" ").slice(1).join(" ")) + ";" + e((c.name || "").split(" ")[0]) + ";;;",
+          c.company && "ORG:" + e(c.company), c.position && "TITLE:" + e(c.position), ...(c.phones || []).map(p => "TEL;TYPE=WORK:" + p), ...(c.emails || []).map(x => "EMAIL;TYPE=INTERNET:" + x),
+          (c.city || c.country) && "ADR;TYPE=WORK:;;;" + e(c.city) + ";;;" + e(c.country), ...(c.links || []).map(u => "URL:" + u), c.tags?.length && "CATEGORIES:" + c.tags.map(e).join(","), c.notes && "NOTE:" + e(c.notes), "END:VCARD"].filter(Boolean).join("\r\n")).join("\r\n");
+      } else data = JSON.stringify(list.map(stripPriv), null, 2);
+      try { await downloads.save({ filename: `kontakty-${stamp}.${fmt}`, data }); $("#expNote", m).textContent = "Файл сохранён."; }
+      catch (e) { if (e?.code !== "declined") $("#expNote", m).textContent = "Не удалось сохранить файл."; }
+    });
+  });
+}
+
+/* ---------- AI enrichment ---------- */
+function openEnrich() {
+  const need = state.contacts.filter(c => !c.country || !(c.tags || []).length);
+  if (!need.length) { toast("У всех контактов уже есть страна и теги"); return; }
+  openModal(`<h2>Дополнить ИИ</h2>
+    <p class="note" style="margin:0">У ${need.length} ${plural(need.length, "контакта", "контактов", "контактов")} не указана страна или отрасль. ИИ предложит их по домену почты, телефонному коду и названию компании. Ничего не изменится, пока вы не нажмёте «Применить».</p>
+    <div id="enOut"></div>
+    <div class="foot"><button class="btn" type="button" id="enClose">Закрыть</button><button class="btn primary" type="button" id="enGo">Предложить</button></div>`, m => {
+    $("#enClose", m).onclick = closeModal;
+    let sugg = [];
+    $("#enGo", m).onclick = async () => {
+      const btn = $("#enGo", m);
+      if (sugg.length) {
+        btn.disabled = true; let done = 0;
+        for (const s of sugg.filter(s => $(`#en_${CSS.escape(s.id)}`, m)?.checked)) {
+          const c = state.byId.get(s.id); if (!c) continue;
+          const data = stripPriv(c);
+          if (!data.country && s.country) data.country = s.country;
+          if (s.industry && !(data.tags || []).includes(s.industry)) data.tags = [...(data.tags || []), s.industry];
+          try { await saveContact(data, s.id); done++; } catch {}
+        }
+        closeModal(); toast(`Обновлено ${done}`); render(); return;
+      }
+      modalCtl?.abort(); modalCtl = new AbortController(); btn.disabled = true;
+      const out = $("#enOut", m); out.innerHTML = `<span class="thinking"><i></i><i></i><i></i>&nbsp;Анализирую ${need.length}…</span>`;
+      try {
+        for (let i = 0; i < need.length; i += 80) {
+          const part = need.slice(i, i + 80);
+          const lines = part.map(c => [c.id, c.name, c.company, c.position, (c.emails || []).join(","), (c.phones || []).join(","), c.city].map(v => String(v || "").replace(/[|\n]/g, " ")).join("|")).join("\n");
+          const r = await sample.json(`Для каждого делового контакта определи страну и отрасль компании.
+Строки: id|имя|компания|должность|почта|телефоны|город.
+Страна — по-русски, по телефонному коду, домену почты (.at — Австрия и т.п.) или известной тебе компании; если неясно — "". Отрасль — 1–2 слова по-русски строчными (например: "упаковка", "биотопливо", "пищевые ингредиенты", "госорган", "машиностроение"); если неясно — "".
+Ответь только JSON-массивом [{"id":"…","country":"…","industry":"…"}] для всех строк, id копируй точно.
+
+${lines}`, { modelTier: "default", signal: modalCtl.signal });
+          for (const x of Array.isArray(r) ? r : []) if (x && state.byId.has(String(x.id)) && (x.country || x.industry)) sugg.push({ id: String(x.id), country: String(x.country || ""), industry: String(x.industry || "").toLowerCase() });
+        }
+        if (!sugg.length) { out.innerHTML = `<p class="note">ИИ не смог уверенно определить страну или отрасль.</p>`; return; }
+        out.innerHTML = `<div class="tbl"><table><thead><tr><th></th><th>Контакт</th><th>Страна</th><th>Отрасль</th></tr></thead><tbody>${sugg.map(s => { const c = state.byId.get(s.id); return `<tr><td><input type="checkbox" id="en_${esc(s.id)}" checked aria-label="Применить"></td><td>${esc(c.name || c.company)}<div class="note">${esc(c.company)}</div></td><td>${c.country ? `<span class="note">${esc(c.country)}</span>` : esc(s.country)}</td><td>${esc(s.industry)}</td></tr>`; }).join("")}</tbody></table></div>`;
+        btn.textContent = "Применить";
+      } catch (e) { if (e?.code !== "cancelled") out.innerHTML = `<p class="note">${esc(aiErr(e))}</p>`; }
+      finally { const b = $("#enGo", m); if (b) b.disabled = false; }
+    };
+  });
+}
+
+/* ---------- Web research ---------- */
+function toolText(r) {
+  if (typeof r?.payload === "string") return r.payload;
+  const t = (r?.content || []).filter(b => b && b.type === "text").map(b => b.text).join("\n");
+  return t || (r?.payload ? JSON.stringify(r.payload) : "");
+}
+async function br(tool, input, signal) { return toolText(await mcp.callTool(BROWSER, tool, input, { cache: false, signal })); }
+async function pageText(url, max, signal) {
+  let opened = false;
+  if (browserTab) { try { await br("navigate", { url, tabId: browserTab }, signal); opened = true; } catch (e) { if (e?.code === "cancelled") throw e; browserTab = null; } }
+  if (!opened) { const t = await br("preview_start", { url }, signal); const m = /tabId\s+([^\s)]+)/.exec(t); browserTab = m ? m[1] : null; }
+  return br("get_page_text", browserTab ? { tabId: browserTab, max_chars: max } : { max_chars: max }, signal);
+}
+const ddgClean = t => { const i = t.indexOf("Past Year"); return (i > 0 ? t.slice(i + 9) : t).replace(/\n{3,}/g, "\n\n").trim(); };
+const BLOCKED = /unusual traffic|необычный трафик|not a robot|не робот|\/sorry\/|recaptcha|Before you continue to Google|Прежде чем перейти к Google/i;
+async function webSearch(q, signal) {
+  try {
+    const t = await pageText("https://www.google.com/search?hl=ru&num=10&q=" + encodeURIComponent(q), 9000, signal);
+    if (!BLOCKED.test(t) && t.length > 400) {
+      const i = t.search(/Результаты поиска|Search Results/);
+      let links = [];
+      try {
+        const tree = await br("read_page", { ...(browserTab ? { tabId: browserTab } : {}), filter: "interactive", max_chars: 20000 }, signal);
+        links = [...new Set([...tree.matchAll(/href="(https?:\/\/[^"]+)"/g)].map(m => m[1].replace(/&amp;/g, "&")))]
+          .filter(u => !/(^https?:\/\/([a-z0-9-]+\.)*(google|gstatic|googleusercontent|youtube\.com\/results|webcache)\.|\/search\?|accounts\.google)/i.test(u)).slice(0, 25);
+      } catch (e) { if (signal?.aborted) throw e; }
+      return { engine: "Google", text: (i > 0 ? t.slice(i) : t).replace(/\n{3,}/g, "\n\n").trim() + (links.length ? "\n\nТочные ссылки из выдачи:\n" + links.join("\n") : "") };
+    }
+  } catch (e) { if (signal?.aborted) throw e; if (e?.code === "server_not_connected") throw e; }
+  return { engine: "DuckDuckGo", text: ddgClean(await pageText("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(q), 7000, signal)) };
+}
+function imageBlock(r) { const b = (r?.content || []).find(x => x && x.type === "image" && x.data); return b ? { data: b.data, mime: b.mimeType || "image/png" } : null; }
+function b64Blob({ data, mime }) { const bin = atob(data); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type: mime }); }
+async function screenshotTab(signal) {
+  const r = await mcp.callTool(BROWSER, "computer", browserTab ? { action: "screenshot", tabId: browserTab, scale: 1 } : { action: "screenshot", scale: 1 }, { cache: false, signal });
+  const img = imageBlock(r); if (!img) throw { code: "no_image" };
+  const m = /coordinate frame:\s*(\d+)\s*x\s*(\d+)/i.exec(toolText(r));
+  return { ...img, frameW: m ? +m[1] : 0, frameH: m ? +m[2] : 0 };
+}
+async function zoomTab(region, signal) {
+  const r = await mcp.callTool(BROWSER, "computer", { action: "zoom", region, ...(browserTab ? { tabId: browserTab } : {}), scale: 1 }, { cache: false, signal });
+  const img = imageBlock(r); if (!img) throw { code: "no_image" };
+  return b64Blob(img);
+}
+function mcpErr(e) {
+  const c = e?.code;
+  if (c === "server_not_connected") return "браузер Claude недоступен — откройте книгу в приложении Claude для компьютера";
+  if (c === "cancelled") return "доступ к сайту не разрешён";
+  if (c === "not_in_manifest" || c === "approval_required") return "браузер не разрешён для этой страницы";
+  if (c === "tool_error") return "сайт не открылся";
+  return "ошибка браузера";
+}
+const cardJSON = c => JSON.stringify({ name: c.name, company: c.company, position: c.position, phones: c.phones, emails: c.emails, country: c.country, city: c.city, links: c.links });
+const VERIFY_RULES = `Задача: проверить и обновить карточку делового контакта по материалам из интернета ниже. Сегодня ${today()}.
+1) Сначала реши, относятся ли материалы именно к этому человеку: совпадение имени плюс компании, должности, страны или домена почты. Однофамильцев отбрасывай. Если уверенности нет — match "low" и не предлагай изменений полей.
+2) Бери только профессиональную общедоступную информацию: текущая должность и компания, рабочие телефоны и e-mail с официальных страниц, город и страна работы, профессиональные профили (LinkedIn, страница на сайте компании), выступления, публикации, профессиональные новости. Никогда не собирай домашний адрес, семью, личную жизнь, здоровье, политические или религиозные взгляды.
+3) Каждый факт — только если он прямо есть в материалах, с URL источника (для результатов поиска — адрес из результата). Ничего не додумывай. Если должность или компания в интернете новее, чем в карточке, — предложи обновление и упомяни это в warnings.
+Ответь только JSON:
+{"match":"high|medium|low","summary":"2–3 предложения по-русски: кто это сейчас и что нового по сравнению с карточкой","updates":{"position":{"value":"","source":""},"company":{"value":"","source":""},"country":{"value":"","source":""},"city":{"value":"","source":""},"phones":[{"value":"","source":""}],"emails":[{"value":"","source":""}],"links":[{"value":"https://…","source":""}]},"facts":[{"text":"факт по-русски","source":"https://…"}],"photoPage":"URL страницы, где есть фото этого человека, или пустая строка","warnings":["…"]}
+В updates оставляй только то, что отличается от карточки или дополняет её; страну и город пиши по-русски; ссылки — полными URL. Фактов — не больше 10.`;
+
+function openResearch(id) {
+  const c0 = state.byId.get(id); if (!c0) return;
+  openModal(`<h2>Поиск в интернете: ${esc(c0.name || c0.company)}</h2>
+    <div id="rsBody"></div>
+    <div class="foot" id="rsFoot"></div>`, m => {
+    let found = null;
+    const body = $("#rsBody", m), foot = $("#rsFoot", m);
+    const showStart = () => {
+      if (browserOK) {
+        body.innerHTML = `<p class="note" style="margin:0">ИИ найдёт этого человека в интернете через браузер приложения Claude, откроет найденные страницы, сверит факты с карточкой и покажет, что можно обновить. У каждого факта будет ссылка на источник. Ничего не изменится, пока вы не подтвердите. Приложение может спросить разрешение на открытие сайтов.</p>`;
+        foot.innerHTML = `<button class="btn" type="button" id="rsManual">Вставить найденное вручную</button><button class="btn" type="button" id="rsClose">Закрыть</button><button class="btn primary" type="button" id="rsGo">Начать поиск</button>`;
+        $("#rsGo", m).onclick = runAuto;
+      } else {
+        showManual(true); return;
+      }
+      $("#rsManual", m).onclick = () => showManual(false);
+      $("#rsClose", m).onclick = closeModal;
+    };
+    const showManual = auto => {
+      const c = state.byId.get(id);
+      const q = `Найди в интернете профессиональную информацию о деловом контакте и дай ссылки на источники: ${[c.name, c.position, c.company, c.city, c.country].filter(Boolean).join(", ")}${c.emails[0] ? ", почта " + c.emails[0] : ""}. Нужны: текущая должность и компания, рабочие контакты с официальных страниц, профиль LinkedIn или страница на сайте компании, профессиональные новости. Только профессиональная информация.`;
+      body.innerHTML = `${auto ? `<p class="note" style="margin:0">Автоматический поиск работает, когда книга открыта в приложении Claude для компьютера. Здесь можно сделать так: скопируйте запрос, задайте его Claude в обычном чате, а ответ со ссылками вставьте ниже — ИИ сверит его с карточкой.</p>` : `<p class="note" style="margin:0">Вставьте текст со страницы, ответ Claude из чата или заметки — ИИ сверит их с карточкой и предложит обновления.</p>`}
+        <div class="field"><label for="rsQ">Запрос для чата</label><textarea id="rsQ" rows="3" readonly>${esc(q)}</textarea></div>
+        <button class="btn" type="button" id="rsCopyQ" style="justify-self:start">Скопировать запрос</button>
+        <div class="field"><label for="rsPaste">Найденная информация (со ссылками на источники)</label><textarea id="rsPaste" rows="7"></textarea></div>
+        <div id="rsLog"></div>`;
+      foot.innerHTML = `${!auto && browserOK ? `<button class="btn" type="button" id="rsBack">Назад</button>` : ""}<button class="btn" type="button" id="rsClose">Закрыть</button><button class="btn primary" type="button" id="rsGo">Сверить с карточкой</button>`;
+      $("#rsCopyQ", m).onclick = () => copyText(q, $("#rsQ", m));
+      $("#rsClose", m).onclick = closeModal;
+      $("#rsBack", m) && ($("#rsBack", m).onclick = showStart);
+      $("#rsGo", m).onclick = async () => {
+        const tx = $("#rsPaste", m).value.trim(); if (!tx) { $("#rsPaste", m).focus(); return; }
+        modalCtl?.abort(); modalCtl = new AbortController(); $("#rsGo", m).disabled = true;
+        $("#rsLog", m).innerHTML = `<span class="thinking"><i></i><i></i><i></i>&nbsp;Сверяю с карточкой…</span>`;
+        try {
+          found = await sample.json(`${VERIFY_RULES}\n\nКарточка сейчас:\n${cardJSON(state.byId.get(id))}\n\nМатериалы (вставлены пользователем; ссылки внутри текста — источники):\n"""\n${tx.slice(0, 40000)}\n"""`, { modelTier: "default", signal: modalCtl.signal });
+          showReview();
+        } catch (e) { if (e?.code !== "cancelled") { $("#rsLog", m).textContent = aiErr(e); const b = $("#rsGo", m); if (b) b.disabled = false; } }
+      };
+    };
+    const runAuto = async () => {
+      const c = state.byId.get(id);
+      modalCtl?.abort(); modalCtl = new AbortController(); const signal = modalCtl.signal;
+      body.innerHTML = `<div class="log" id="rsLog" aria-live="polite"></div>`;
+      foot.innerHTML = `<button class="btn" type="button" id="rsStop">Остановить</button>`;
+      $("#rsStop", m).onclick = () => { modalCtl?.abort(); showStart(); };
+      const log = s => { const el = $("#rsLog", m); if (!el) return; const sp = document.createElement("span"); sp.textContent = s; el.append(sp); el.scrollTop = el.scrollHeight; };
+      try {
+        const comp = c.company.replace(/\b(GmbH|AG|LLC|Ltd\.?|OOO|ООО|Inc\.?|& Co\.?|KG|OG|S\.?A\.?|Sdn\.? Bhd\.?)\b/gi, "").replace(/\s+/g, " ").trim();
+        const domain = c.emails[0] ? c.emails[0].split("@")[1] : "";
+        const freeMail = /^(gmail|yahoo|outlook|hotmail|mail|yandex|bk|list|inbox|web|gmx|icloud|aol|utanet|aon|chello)\./i.test(domain);
+        const queries = [];
+        if (c.name) queries.push(`"${c.name}" ${comp}`.trim());
+        if (c.name) queries.push(`${c.name} ${comp ? comp + " " : ""}${c.position ? c.position.split(/[,/]/)[0] : ""}`.trim());
+        if (c.name) queries.push(`"${c.name}" linkedin`);
+        if (domain && !freeMail) queries.push(`"${c.name || comp}" site:${domain}`);
+        else if (comp && !c.name) queries.push(`${comp} ${c.country || ""} контакты`.trim());
+        if (!queries.length) throw { code: "nothing" };
+        const results = [];
+        for (const q of [...new Set(queries)].slice(0, 4)) {
+          log("Ищу: " + q);
+          try { const r = await webSearch(q, signal); const cut = r.text.indexOf("\n\nТочные ссылки"); results.push(`### Поиск (${r.engine}): ${q}\n${cut > 0 ? r.text.slice(0, Math.min(cut, 5000)) + r.text.slice(cut, cut + 2500) : r.text.slice(0, 5000)}`); log("  " + r.engine + ": " + (r.text.length > 300 ? "есть результаты" : "мало результатов")); }
+          catch (e) { if (e?.code === "cancelled" && signal.aborted) return; log("  не удалось: " + mcpErr(e)); if (e?.code === "server_not_connected") { browserOK = false; break; } }
+        }
+        if (!results.length) { log("Поиск не дал результатов."); foot.innerHTML = `<button class="btn" type="button" id="rsM">Вставить вручную</button><button class="btn" type="button" id="rsClose">Закрыть</button>`; $("#rsM", m).onclick = () => showManual(!browserOK); $("#rsClose", m).onclick = closeModal; return; }
+        log("Выбираю страницы, которые стоит открыть…");
+        const pick = await sample.json(`Карточка делового контакта: ${cardJSON(c)}
+Ниже результаты поиска. Выбери до 4 страниц, которые вероятнее всего именно об этом человеке или его работе: страница на сайте компании (команда, контакты, пресс-релиз), авторский профиль, программа конференции, интервью, новость. Однофамильцев (другая отрасль, город, годы жизни) не бери; реестры юрлиц бери, только если там явно эта же компания. Бери адреса из списка «Точные ссылки из выдачи», если он есть; иначе восстанови полный URL из показанного адреса.
+Ответь только JSON: {"urls":["https://…"]}
+
+${results.join("\n\n")}`, { modelTier: "quick", signal });
+        const urls = [...new Set((Array.isArray(pick?.urls) ? pick.urls : []).map(String).map(u => /^https?:\/\//i.test(u) ? u : "https://" + u.replace(/^\/+/, "")).filter(u => host(u)))].slice(0, 4);
+        const pages = [];
+        for (const u of urls) {
+          log("Открываю: " + u);
+          try { const t = await pageText(u, 9000, signal); pages.push(`### Страница: ${u}\n${t.slice(0, 7000)}`); }
+          catch (e) { if (e?.code === "cancelled" && signal.aborted) return; log("  не открылась: " + mcpErr(e)); }
+        }
+        log("Сверяю факты с карточкой…");
+        found = await sample.json(`${VERIFY_RULES}\n\nКарточка сейчас:\n${cardJSON(c)}\n\nМатериалы из интернета:\n${results.join("\n\n")}\n\n${pages.join("\n\n")}`, { modelTier: "default", signal });
+        showReview();
+      } catch (e) {
+        if (signal.aborted || e?.code === "cancelled") return;
+        log(e?.code === "nothing" ? "У контакта нет ни имени, ни компании — искать нечего." : (e?.code && /^[a-z_]+$/.test(e.code) && aiErr(e)) || "Не получилось.");
+        foot.innerHTML = `<button class="btn" type="button" id="rsClose">Закрыть</button>`; $("#rsClose", m).onclick = closeModal;
+      }
+    };
+    const showReview = () => {
+      const c = state.byId.get(id); const u = found?.updates || {};
+      const items = [];
+      for (const k of ["position", "company", "country", "city"]) {
+        const v = u[k]; const val = String(v?.value || "").trim();
+        if (val && norm(val) !== norm(c[k])) items.push({ k, kind: "set", value: val, source: String(v?.source || ""), was: c[k] });
+      }
+      for (const k of ["phones", "emails", "links"]) for (const v of Array.isArray(u[k]) ? u[k] : []) {
+        const val = String(v?.value || "").trim(); if (!val) continue;
+        const have = (c[k] || []).map(x => norm(x).replace(/[\s()+-]/g, ""));
+        if (!have.includes(norm(val).replace(/[\s()+-]/g, ""))) items.push({ k, kind: "add", value: val, source: String(v?.source || "") });
+      }
+      const LBL = { position: "Должность", company: "Компания", country: "Страна", city: "Город", phones: "Телефон", emails: "Почта", links: "Ссылка" };
+      const match = ["high", "medium", "low"].includes(found?.match) ? found.match : "low";
+      const facts = (Array.isArray(found?.facts) ? found.facts : []).filter(f => f && f.text);
+      const warns = (Array.isArray(found?.warnings) ? found.warnings : []).filter(Boolean);
+      body.innerHTML = `<div><span class="badge ${match}">${MATCH[match]}</span></div>
+        ${found?.summary ? `<p style="margin:0">${esc(found.summary)}</p>` : ""}
+        ${warns.length ? `<div class="banner">${warns.map(w => esc(w)).join("<br>")}</div>` : ""}
+        ${items.length ? `<div class="section"><h3>Что обновить в карточке</h3><div class="upd">${items.map((it, i) => `<label><input type="checkbox" id="up_${i}" ${match === "low" ? "" : "checked"}><span><span class="k">${LBL[it.k]}${it.kind === "add" ? " — добавить" : ""}</span><br>${it.was ? `<span class="was">${esc(it.was)}</span> → ` : ""}<span class="now">${esc(it.value)}</span>${srcLink(it.source)}</span></label>`).join("")}</div></div>`
+          : `<p class="note" style="margin:0">Новых данных для полей карточки не нашлось.</p>`}
+        ${facts.length ? `<div class="section"><h3>Факты из источников</h3><ul class="facts" style="margin:0;padding-left:18px;display:grid;gap:4px">${facts.slice(0, 10).map(f => `<li>${esc(f.text)}${srcLink(String(f.source || ""))}</li>`).join("")}</ul></div>` : ""}
+        ${found?.photoPage ? `<p class="note" style="margin:0">Фото: ${/^https?:\/\//i.test(found.photoPage) ? `<a href="${esc(found.photoPage)}" target="_blank" rel="noopener">${esc(host(found.photoPage))}</a>` : esc(found.photoPage)} — нажмите на аватар контакта, чтобы подобрать фото в Google Картинках или загрузить своё.</p>` : ""}`;
+      foot.innerHTML = `<button class="btn" type="button" id="rsClose">Не сохранять</button><button class="btn primary" type="button" id="rsApply">${items.length ? "Применить выбранное" : "Сохранить сводку"}</button>`;
+      $("#rsClose", m).onclick = closeModal;
+      $("#rsApply", m).onclick = async () => {
+        const cur = state.byId.get(id); if (!cur) { closeModal(); return; }
+        const data = stripPriv(cur); let n = 0;
+        items.forEach((it, i) => {
+          if (!$("#up_" + i, m)?.checked) return; n++;
+          if (it.kind === "set") data[it.k] = it.value; else data[it.k] = [...(data[it.k] || []), it.value];
+        });
+        data.research = { at: today(), match, summary: String(found?.summary || ""), facts: facts.slice(0, 10).map(f => ({ text: String(f.text), source: String(f.source || "") })), photoPage: String(found?.photoPage || "") };
+        if (n) data.history = [...(data.history || []), { date: today(), text: `Карточка обновлена по данным из интернета (${n} ${plural(n, "поле", "поля", "полей")})` }];
+        $("#rsApply", m).disabled = true;
+        try { await saveContact(data, id); closeModal(); toast(n ? `Обновлено: ${n}` : "Сводка сохранена"); render(); } catch (e) { toast(dbErr(e)); $("#rsApply", m).disabled = false; }
+      };
+    };
+    showStart();
+  });
+}
+
+/* ---------- Photo ---------- */
+function openPhoto(id) {
+  const c = state.byId.get(id); if (!c || !assets) return;
+  openModal(`<h2>Фото: ${esc(c.name || c.company)}</h2>
+    <div class="drop" id="phDrop" tabindex="0"><div>Перетащите фото сюда или вставьте из буфера (Ctrl+V)</div><label class="btn"><input type="file" id="phIn" accept="image/png,image/jpeg,image/webp,image/gif" hidden>Выбрать файл</label><span class="note" id="phNote">${c.research?.photoPage ? `Фото было найдено на ${esc(host(c.research.photoPage))} — сохраните его оттуда.` : "Подойдёт фото с сайта компании или из LinkedIn."}</span></div>
+    ${browserOK ? `<div class="section" style="display:grid;gap:8px"><h3 style="margin:0">Или найти в Google Картинках</h3>
+      <form id="phSearch" style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" id="phQ" style="flex:1 1 240px;min-width:0" value="${esc([c.name, c.company.replace(/\b(GmbH|AG|LLC|Ltd\.?|Group)\b/gi, "").trim()].filter(Boolean).join(" "))}" aria-label="Запрос для поиска фото"><button class="btn" type="submit">Найти</button></form>
+      <div id="phShot"></div></div>` : ""}
+    <div class="foot">${c.photoId ? `<button class="btn ghost danger" type="button" id="phDel">Убрать фото</button>` : ""}<button class="btn" type="button" id="phClose">Закрыть</button><button class="btn primary" type="button" id="phSave" hidden>Сохранить выделенное</button></div>`, m => {
+    $("#phClose", m).onclick = closeModal;
+    const note = $("#phNote", m), drop = $("#phDrop", m);
+    let shot = null, sel = null;
+    $("#phSearch", m) && ($("#phSearch", m).onsubmit = async ev => {
+      ev.preventDefault();
+      const q = $("#phQ", m).value.trim(); if (!q) return;
+      const box = $("#phShot", m); sel = null; $("#phSave", m).hidden = true;
+      modalCtl?.abort(); modalCtl = new AbortController(); const signal = modalCtl.signal;
+      box.innerHTML = `<span class="thinking"><i></i><i></i><i></i>&nbsp;Открываю Google Картинки…</span>`;
+      try {
+        if (browserTab) { try { await br("navigate", { url: "https://www.google.com/search?hl=ru&udm=2&q=" + encodeURIComponent(q), tabId: browserTab }, signal); } catch (e) { if (signal.aborted) return; browserTab = null; } }
+        if (!browserTab) { const t = await br("preview_start", { url: "https://www.google.com/search?hl=ru&udm=2&q=" + encodeURIComponent(q) }, signal); const mm = /tabId\s+([^\s)]+)/.exec(t); browserTab = mm ? mm[1] : null; }
+        try { await mcp.callTool(BROWSER, "computer", { action: "wait", duration: 1.5, ...(browserTab ? { tabId: browserTab } : {}) }, { cache: false, signal }); } catch (e) { if (signal.aborted) return; }
+        shot = await screenshotTab(signal);
+        box.innerHTML = `<p class="note" style="margin:0 0 6px">Нажмите на лицо или обведите его рамкой — выделенное станет фото контакта. Убедитесь, что это тот самый человек.</p>
+          <div id="phPick" style="position:relative;touch-action:none;user-select:none;cursor:crosshair;border-radius:8px;overflow:hidden;border:1px solid var(--line)"><img id="phImg" alt="Снимок Google Картинок" style="display:block;width:100%;height:auto" src="data:${esc(shot.mime)};base64,${shot.data}"><div id="phSel" hidden style="position:absolute;border:2px solid var(--accent);box-shadow:0 0 0 9999px rgba(0,0,0,.35);border-radius:4px"></div></div>`;
+        const pick = $("#phPick", m), img = $("#phImg", m), selEl = $("#phSel", m);
+        let start = null;
+        const pt = e => { const r = img.getBoundingClientRect(); return { x: Math.max(0, Math.min(r.width, e.clientX - r.left)), y: Math.max(0, Math.min(r.height, e.clientY - r.top)), w: r.width, h: r.height }; };
+        const draw = (a, b) => {
+          let side = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+          if (side < 12) side = Math.min(a.w, a.h) * 0.22;
+          let x = side === Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) ? Math.min(a.x, b.x) : a.x - side / 2;
+          let y = side === Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) ? Math.min(a.y, b.y) : a.y - side / 2;
+          x = Math.max(0, Math.min(a.w - side, x)); y = Math.max(0, Math.min(a.h - side, y)); side = Math.min(side, a.w, a.h);
+          Object.assign(selEl.style, { left: x + "px", top: y + "px", width: side + "px", height: side + "px" }); selEl.hidden = false;
+          const k = img.naturalWidth / a.w; sel = { x: x * k, y: y * k, s: side * k };
+          $("#phSave", m).hidden = false;
+        };
+        pick.onpointerdown = e => { start = pt(e); pick.setPointerCapture(e.pointerId); draw(start, start); };
+        pick.onpointermove = e => { if (start) draw(start, pt(e)); };
+        pick.onpointerup = e => { if (start) draw(start, pt(e)); start = null; };
+      } catch (e) {
+        if (signal.aborted) return;
+        box.innerHTML = `<p class="note">Не удалось получить картинки: ${esc(e?.code === "no_image" ? "браузер не вернул снимок" : mcpErr(e))}.</p>`;
+      }
+    });
+    $("#phSave", m).onclick = async () => {
+      if (!shot || !sel) return;
+      $("#phSave", m).disabled = true; note.innerHTML = `<span class="thinking"><i></i><i></i><i></i>&nbsp;Сохраняю фото…</span>`;
+      let blob = null;
+      if (shot.frameW) {
+        const img = $("#phImg", m), k = shot.frameW / img.naturalWidth;
+        try { blob = await zoomTab([Math.round(sel.x * k), Math.round(sel.y * k), Math.round((sel.x + sel.s) * k), Math.round((sel.y + sel.s) * k)], modalCtl?.signal); } catch { blob = null; }
+      }
+      if (!blob) {
+        const img = $("#phImg", m), cv = document.createElement("canvas"), side = Math.round(sel.s);
+        cv.width = side; cv.height = side; cv.getContext("2d").drawImage(img, sel.x, sel.y, sel.s, sel.s, 0, 0, side, side);
+        blob = await new Promise(r => cv.toBlob(r, "image/jpeg", 0.92));
+      }
+      $("#phSave", m).disabled = false;
+      if (blob) put(new File([blob], "photo.jpg", { type: blob.type || "image/jpeg" })); else note.textContent = "Не удалось вырезать фото.";
+    };
+    const put = async f => {
+      if (!f || !/^image\/(png|jpeg|webp|gif)$/.test(f.type)) { note.textContent = "Нужна картинка PNG, JPEG, WebP или GIF."; return; }
+      note.innerHTML = `<span class="thinking"><i></i><i></i><i></i>&nbsp;Загружаю…</span>`;
+      try {
+        const blob = await shrink(f);
+        const up = await assets.upload(blob, { type: blob.type });
+        const cur = state.byId.get(id); const old = cur.photoId;
+        const data = stripPriv(cur); data.photoId = up.id;
+        await saveContact(data, id);
+        if (old && old !== up.id) assets.delete(old).catch(() => {});
+        closeModal(); toast("Фото сохранено"); render();
+      } catch (e) {
+        note.textContent = e?.code === "too_large" ? "Файл слишком большой." : e?.code === "quota_or_state" ? "Хранилище фото заполнено." : "Не удалось загрузить фото.";
+      }
+    };
+    $("#phIn", m).onchange = e => put(e.target.files[0]);
+    drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+    drop.ondragleave = () => drop.classList.remove("over");
+    drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); put(e.dataTransfer.files[0]); };
+    m.addEventListener("paste", e => { const f = [...(e.clipboardData?.files || [])].find(x => x.type.startsWith("image/")); if (f) { e.preventDefault(); put(f); } });
+    drop.focus();
+    $("#phDel", m) && ($("#phDel", m).onclick = async () => {
+      const cur = state.byId.get(id); const old = cur.photoId; const data = stripPriv(cur); data.photoId = "";
+      try { await saveContact(data, id); if (old) assets.delete(old).catch(() => {}); closeModal(); render(); } catch (e) { toast(dbErr(e)); }
+    });
+  });
+}
+async function shrink(file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const s = Math.min(1, 512 / Math.max(bmp.width, bmp.height));
+    if (s === 1 && file.size < 400000) return file;
+    const cv = document.createElement("canvas"); cv.width = Math.round(bmp.width * s); cv.height = Math.round(bmp.height * s);
+    cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+    return await new Promise(r => cv.toBlob(b => r(b || file), "image/jpeg", 0.88));
+  } catch { return file; }
+}
+
+/* ---------- Wiring ---------- */
+$("#btnAdd").onclick = () => openEditor();
+$("#btnImport").onclick = openImport;
+$("#btnExport").onclick = openExport;
+$("#btnEnrich").onclick = openEnrich;
+$("#q").addEventListener("input", e => { state.q = e.target.value; if (state.ai && !state.ai.loading) state.ai = null; renderAnswer(); renderList(); });
+$("#askForm").onsubmit = e => { e.preventDefault(); const q = $("#q").value.trim(); if (q && sample) askAI(q); };
+$$("[data-ex]").forEach(b => b.onclick = () => { $("#q").value = b.dataset.ex; state.q = ""; askAI(b.dataset.ex); });
+window.addEventListener("resize", () => renderDetail());
+
+function enableAI() {
+  const on = !!sample;
+  $("#btnAsk").hidden = !on; $("#kbdHint").hidden = !on; $("#examples").hidden = !on; $("#btnEnrich").hidden = !on;
+  if (!on) $("#q").placeholder = "Поиск по имени, компании, стране, почте…";
+}
+function enterDemo() { state.demo = true; state.loaded = true; indexContacts(EXAMPLES); render(); }
+
+render();
+(async () => {
+  const cl = window.claude;
+  if (!cl || typeof cl.use !== "function") { enterDemo(); return; }
+  const [d, s, dl, mc, as] = await Promise.all([cl.use("db"), cl.use("sample"), cl.use("downloads"), cl.use("mcp"), cl.use("assets")]);
+  db = d; sample = s; downloads = dl; mcp = mc; assets = as;
+  enableAI();
+  if (mcp) mcp.listTools(BROWSER).then(r => { browserOK = !!r?.servers?.some(x => x.server === BROWSER); }).catch(() => { browserOK = false; });
+  if (!db) { enterDemo(); return; }
+  col = db.collection("contacts");
+  col.onSnapshot(snap => {
+    indexContacts(snap.docs.map(x => ({ id: x.id, ...x.data() })));
+    state.loaded = true; render();
+  }, () => { toast("Связь с хранилищем потеряна — обновите страницу."); });
+})();
+</script>

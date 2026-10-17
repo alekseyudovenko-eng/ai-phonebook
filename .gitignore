@@ -1,0 +1,9 @@
+# Личные данные контактов никогда не коммитим
+*.vcf
+contacts*.csv
+!examples/contacts-template.csv
+*.xlsx
+export/
+.env
+node_modules/
+.DS_Store

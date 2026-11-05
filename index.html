@@ -184,7 +184,10 @@ textarea { resize: vertical; min-height: 70px; }
 .out { white-space: pre-wrap; background: var(--surface-2); border-radius: 8px; padding: 12px; min-height: 120px; overflow-wrap: anywhere; }
 
 .banner { background: var(--marker); color: var(--marker-ink); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
-.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; z-index: 60; font-size: 14px; max-width: calc(100% - 32px); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; z-index: 60; font-size: 14px; max-width: calc(100% - 32px); display: flex; gap: 14px; align-items: center; }
+.toast button { border: 0; background: none; color: var(--accent-soft); font-weight: 600; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+a.copy { text-decoration: none; font-size: 11px; font-weight: 600; line-height: 15px; min-width: 19px; text-align: center; }
+.stale { color: var(--danger); }
 
 @media (max-width: 899px) {
   .main { grid-template-columns: minmax(0, 1fr); }
@@ -248,7 +251,11 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const norm = s => String(s ?? "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
 
-const state = { contacts: [], byId: new Map(), selected: null, q: "", country: "", tag: "", ai: null, demo: false, loaded: false, confirmDelete: false };
+const ICON_PHONE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>';
+const ICON_MAIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>';
+const STALE_DAYS = 180;
+
+const state = { contacts: [], byId: new Map(), selected: null, q: "", country: "", tag: "", stale: false, ai: null, demo: false, loaded: false, confirmDelete: false };
 let db = null, col = null, sample = null, downloads = null, aiCtl = null, mcp = null, assets = null, browserOK = false, browserTab = null;
 const BROWSER = "host:claude_browser";
 
@@ -286,7 +293,11 @@ const srcLink = u => /^https?:\/\//i.test(u) ? `<span class="src">— <a href="$
 const MATCH = { high: "совпадение уверенное", medium: "совпадение вероятное", low: "совпадение сомнительное" };
 const lastTouch = c => (c.history || []).map(h => h.date).filter(Boolean).sort().pop() || "";
 const hay = c => norm([c.name, c.company, c.position, c.country, c.city, ...(c.phones || []), ...(c.emails || []), ...(c.tags || []), ...(c.links || []), c.notes, ...(c.history || []).map(h => h.text)].join(" "));
-const today = () => new Date().toISOString().slice(0, 10);
+// Local date (not UTC): after midnight in Moscow toISOString() still returned yesterday
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const today = () => ymd(new Date());
+const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return ymd(d); };
+const isStale = c => lastTouch(c) < daysAgo(STALE_DAYS);
 const fmtDate = d => { if (!d) return ""; const [y, m, dd] = d.split("-"); return dd && m && y ? `${dd}.${m}.${y}` : d; };
 
 function indexContacts(list) {
@@ -307,7 +318,7 @@ const EXAMPLES = [
 async function saveContact(data, id) {
   const now = Date.now();
   const prev = id ? state.byId.get(id) : null;
-  const body = { ...clean(data), createdAt: prev?.createdAt || now, updatedAt: now };
+  const body = { ...clean(data), createdAt: prev?.createdAt || Number(data.createdAt) || now, updatedAt: now };
   if (state.demo) {
     const nid = id || "ex" + now;
     const list = state.contacts.filter(c => c.id !== nid).map(stripPriv);
@@ -330,6 +341,7 @@ function filtered() {
   let list = state.contacts;
   if (state.country) list = list.filter(c => c.country === state.country);
   if (state.tag) list = list.filter(c => (c.tags || []).includes(state.tag));
+  if (state.stale) list = list.filter(isStale).sort((a, b) => lastTouch(a).localeCompare(lastTouch(b)));
   if (state.ai && !state.ai.loading && !state.ai.error) {
     const order = new Map(state.ai.matches.map((m, i) => [m.id, i]));
     return list.filter(c => order.has(c.id)).sort((a, b) => order.get(a.id) - order.get(b.id));
@@ -370,8 +382,10 @@ function renderFilters() {
   const countries = cnt("country").slice(0, 8), tags = cnt("tags").slice(0, 10);
   const chip = (kind, v, n) => `<button type="button" class="chip" data-k="${kind}" data-v="${esc(v)}" aria-pressed="${state[kind] === v}">${esc(v)}<span class="n">${n}</span></button>`;
   el.innerHTML = (countries.length ? `<span class="lbl">Страна</span>${countries.map(([v, n]) => chip("country", v, n)).join("")}` : "")
-    + (tags.length ? `<span class="lbl" style="margin-left:10px">Теги</span>${tags.map(([v, n]) => chip("tag", v, n)).join("")}` : "");
-  $$(".chip", el).forEach(b => b.onclick = () => { const k = b.dataset.k; state[k] = state[k] === b.dataset.v ? "" : b.dataset.v; render(); });
+    + (tags.length ? `<span class="lbl" style="margin-left:10px">Теги</span>${tags.map(([v, n]) => chip("tag", v, n)).join("")}` : "")
+    + `<span class="lbl" style="margin-left:10px">Связь</span><button type="button" class="chip" id="chipStale" aria-pressed="${state.stale}" title="Нет записей в истории за последние 6 месяцев">давно не общались<span class="n">${state.contacts.filter(isStale).length}</span></button>`;
+  $$(".chip[data-k]", el).forEach(b => b.onclick = () => { const k = b.dataset.k; state[k] = state[k] === b.dataset.v ? "" : b.dataset.v; render(); });
+  $("#chipStale", el).onclick = () => { state.stale = !state.stale; render(); };
 }
 
 function renderList() {
@@ -389,7 +403,7 @@ function renderList() {
   const why = ai ? new Map(state.ai.matches.map(m => [m.id, m.why])) : null;
   let html = "", last = null;
   for (const c of list) {
-    if (!ai) {
+    if (!ai && !state.stale) {
       const L = (c.name || c.company || "#")[0].toUpperCase();
       const letter = /\p{L}/u.test(L) ? L : "#";
       if (letter !== last) { html += `<div class="letter">${esc(letter)}</div>`; last = letter; }
@@ -398,7 +412,8 @@ function renderList() {
     html += `<button type="button" class="row" data-id="${esc(c.id)}" aria-current="${state.selected === c.id}">${avatar(c)}
       <span style="min-width:0"><span class="nm" style="display:block">${esc(c.name || c.company || "Без имени")}</span>
       <span class="sub" style="display:block">${esc(sub)}${c.country ? " — " + esc(c.country) : ""}</span>
-      ${ai && why.get(c.id) ? `<span class="why" style="display:block"><span class="mark">${esc(why.get(c.id))}</span></span>` : ""}</span></button>`;
+      ${ai && why.get(c.id) ? `<span class="why" style="display:block"><span class="mark">${esc(why.get(c.id))}</span></span>` : ""}
+      ${state.stale ? `<span class="sub stale" style="display:block">${lastTouch(c) ? "Последний контакт: " + esc(fmtDate(lastTouch(c))) : "Записей об общении нет"}</span>` : ""}</span></button>`;
   }
   el.innerHTML = html;
   $$(".row", el).forEach(b => b.onclick = () => { state.selected = b.dataset.id; state.confirmDelete = false; render(); });
@@ -406,16 +421,31 @@ function renderList() {
 
 function copyBtn(text) { return `<button type="button" class="copy" data-copy="${esc(text)}" title="Скопировать" aria-label="Скопировать">${ICON_COPY}</button>`; }
 
+// Call / WhatsApp / Telegram / e-mail buttons next to a value
+function phoneActions(p) {
+  let digits = String(p).replace(/\D/g, "");
+  if (!String(p).trim().startsWith("+") && digits.length === 11 && digits[0] === "8") digits = "7" + digits.slice(1); // 8 900… → +7 900…
+  if (digits.length < 7) return "";
+  const tel = (String(p).trim().startsWith("+") || digits !== String(p).replace(/\D/g, "") ? "+" : "") + digits;
+  return `<a class="copy" href="tel:${esc(tel)}" title="Позвонить" aria-label="Позвонить">${ICON_PHONE}</a>`
+    + `<a class="copy" href="https://wa.me/${digits}" target="_blank" rel="noopener" title="Написать в WhatsApp" aria-label="Написать в WhatsApp">WA</a>`
+    + `<a class="copy" href="https://t.me/+${digits}" target="_blank" rel="noopener" title="Открыть в Telegram" aria-label="Открыть в Telegram">TG</a>`;
+}
+const mailAction = e => `<a class="copy" href="mailto:${esc(e)}" title="Написать письмо" aria-label="Написать письмо">${ICON_MAIL}</a>`;
+
 function renderDetail() {
   const pane = $("#detailpane"), el = $("#detail");
   const c = state.selected && state.byId.get(state.selected);
+  // Keep a half-typed history entry when the card is redrawn (data update, keyboard opening on a phone)
+  const keep = c && el.dataset.for === c.id && $("#hText", el) ? { text: $("#hText", el).value, date: $("#hDate", el).value, focus: document.activeElement?.id === "hText" } : null;
+  el.dataset.for = c ? c.id : "";
   pane.dataset.open = c ? "true" : "false";
   if (!c) {
     el.innerHTML = state.contacts.length ? `<div class="empty" style="padding:60px 20px"><h3>Выберите контакт</h3><div>Или спросите книгу в строке сверху — например, «кто у меня из Австрии в упаковке».</div></div>` : "";
     if (window.innerWidth >= 900) pane.dataset.open = "true";
     return;
   }
-  const row = (label, vals, mono) => vals && vals.length ? `<dt>${label}</dt><dd>${vals.map(v => `<span class="val"><span class="tx${mono ? " mono" : ""}">${esc(v)}</span>${copyBtn(v)}</span>`).join("")}</dd>` : "";
+  const row = (label, vals, mono, extra) => vals && vals.length ? `<dt>${label}</dt><dd>${vals.map(v => `<span class="val"><span class="tx${mono ? " mono" : ""}">${esc(v)}</span>${copyBtn(v)}${extra ? extra(v) : ""}</span>`).join("")}</dd>` : "";
   const links = (c.links || []).map(l => { const u = /^https?:\/\//i.test(l) ? l : (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(l) ? "https://" + l : ""); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(l)}</a>` : esc(l); });
   const place = [c.city, c.country].filter(Boolean).join(", ");
   const hist = (c.history || []).map((h, i) => ({ ...h, i })).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
@@ -430,8 +460,8 @@ function renderDetail() {
     </div>
     ${state.confirmDelete ? `<div class="confirm"><span>Удалить ${esc(c.name || "контакт")} без возможности восстановления?</span><button class="btn danger solid" type="button" id="btnDelYes">Удалить</button><button class="btn" type="button" id="btnDelNo">Отмена</button></div>` : ""}
     <dl class="fields">
-      ${row("Телефон", c.phones, true)}
-      ${row("Почта", c.emails, false)}
+      ${row("Телефон", c.phones, true, phoneActions)}
+      ${row("Почта", c.emails, false, mailAction)}
       ${place ? `<dt>Где</dt><dd>${esc(place)}</dd>` : ""}
       ${links.length ? `<dt>Ссылки</dt><dd>${links.map(l => `<span class="tx">${l}</span>`).join("")}</dd>` : ""}
       ${(c.tags || []).length ? `<dt>Теги</dt><dd><span class="tags">${c.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</span></dd>` : ""}
@@ -456,16 +486,40 @@ function renderDetail() {
   $("#btnPhoto") && ($("#btnPhoto").onclick = () => openPhoto(c.id));
   $("#btnDraft") && ($("#btnDraft").onclick = () => openDraft(c.id));
   $("#btnDel").onclick = () => { state.confirmDelete = true; renderDetail(); };
-  $("#btnDelYes") && ($("#btnDelYes").onclick = async () => { try { await removeContact(c.id); state.selected = null; state.confirmDelete = false; toast("Контакт удалён"); render(); } catch (e) { toast(dbErr(e)); } });
+  $("#btnDelYes") && ($("#btnDelYes").onclick = async () => {
+    const backup = stripPriv(c), cid = c.id;
+    try {
+      await removeContact(cid); state.selected = null; state.confirmDelete = false; render();
+      toast("Контакт удалён", {
+        label: "Отменить",
+        run: async () => { try { await saveContact(backup, cid); state.selected = cid; render(); toast("Контакт восстановлен"); } catch (e) { toast(dbErr(e)); } },
+        // The photo is deleted only once undo is no longer possible
+        expire: () => { if (backup.photoId && assets && !state.byId.has(cid)) assets.delete(backup.photoId).catch(() => {}); },
+      });
+    } catch (e) { toast(dbErr(e)); }
+  });
   $("#btnDelNo") && ($("#btnDelNo").onclick = () => { state.confirmDelete = false; renderDetail(); });
+  if (keep) {
+    $("#hText", el).value = keep.text; if (keep.date) $("#hDate", el).value = keep.date;
+    if (keep.focus) { const t = $("#hText", el); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+  }
   $("#histForm").onsubmit = async ev => {
-    ev.preventDefault(); const text = $("#hText").value.trim(); if (!text) return;
+    ev.preventDefault(); const inp = $("#hText"), text = inp.value.trim(); if (!text) return;
     const data = stripPriv(c); data.history = [...(c.history || []), { date: $("#hDate").value || today(), text }];
-    try { await saveContact(data, c.id); toast("Запись добавлена"); } catch (e) { toast(dbErr(e)); }
+    inp.value = "";
+    try { await saveContact(data, c.id); toast("Запись добавлена"); } catch (e) { const i2 = $("#hText"); if (i2 && !i2.value) i2.value = text; toast(dbErr(e)); }
   };
   $$("[data-delh]", el).forEach(b => b.onclick = async () => {
-    const data = stripPriv(c); data.history = (c.history || []).filter((_, i) => i !== Number(b.dataset.delh));
-    try { await saveContact(data, c.id); } catch (e) { toast(dbErr(e)); }
+    const idx = Number(b.dataset.delh), removed = (c.history || [])[idx], cid = c.id;
+    const data = stripPriv(c); data.history = (c.history || []).filter((_, i) => i !== idx);
+    try {
+      await saveContact(data, cid);
+      toast("Запись удалена", { label: "Отменить", run: async () => {
+        const cur = state.byId.get(cid); if (!cur || !removed) return;
+        const d2 = stripPriv(cur); d2.history = [...(cur.history || []), removed];
+        try { await saveContact(d2, cid); } catch (e) { toast(dbErr(e)); }
+      } });
+    } catch (e) { toast(dbErr(e)); }
   });
 }
 
@@ -473,8 +527,20 @@ async function copyText(t, btn) {
   try { await navigator.clipboard.writeText(t); toast("Скопировано"); }
   catch { const tx = btn?.previousElementSibling; if (tx) { const r = document.createRange(); r.selectNodeContents(tx); const s = getSelection(); s.removeAllRanges(); s.addRange(r); } toast("Выделено — нажмите Ctrl+C"); }
 }
-let toastT;
-function toast(msg) { const r = $("#toastRoot"); r.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toastT); toastT = setTimeout(() => r.innerHTML = "", 2600); }
+let toastT, toastExpire = null;
+// action: { label, run, expire } — a button in the toast (e.g. "Отменить"); expire runs when the toast goes away without it being pressed
+function toast(msg, action) {
+  const r = $("#toastRoot");
+  clearTimeout(toastT);
+  if (toastExpire) { const f = toastExpire; toastExpire = null; f(); }
+  r.innerHTML = `<div class="toast" role="status"><span>${esc(msg)}</span>${action ? `<button type="button">${esc(action.label)}</button>` : ""}</div>`;
+  if (action) {
+    toastExpire = action.expire || null;
+    $("button", r).onclick = () => { clearTimeout(toastT); toastExpire = null; r.innerHTML = ""; action.run(); };
+  }
+  toastT = setTimeout(() => { r.innerHTML = ""; if (toastExpire) { const f = toastExpire; toastExpire = null; f(); } }, action ? 7000 : 2600);
+}
+window.addEventListener("pagehide", () => { if (toastExpire) { const f = toastExpire; toastExpire = null; f(); } });
 function dbErr(e) {
   const c = e?.code;
   if (c === "quota_exceeded") return "Хранилище заполнено — удалите ненужные контакты.";
@@ -667,8 +733,8 @@ function mapHeader(h) {
   if (/(country|страна)/.test(s)) return "country";
   if (/(city|город|locality)/.test(s)) return "city";
   if (/(tag|group|labels?|теги|группа|категори)/.test(s)) return "tags";
-  if (/(url|website|site|сайт|link|linkedin|social)/.test(s)) return "links";
-  if (/(note|коммент|примеч|mention|описан)/.test(s)) return "notes";
+  if (/(url|website|site|сайт|ссылк|link|linkedin|social)/.test(s)) return "links";
+  if (/(note|заметк|коммент|примеч|mention|описан)/.test(s)) return "notes";
   return null;
 }
 function rowsToContacts(rows) {
@@ -677,7 +743,7 @@ function rowsToContacts(rows) {
   return rows.slice(1).map(r => {
     const c = { phones: [], emails: [], links: [], tags: [], notes: [] }, nm = {};
     r.forEach((v, i) => {
-      const k = map[i]; v = String(v ?? "").trim(); if (!k || !v) return;
+      const k = map[i]; v = String(v ?? "").trim().replace(/^'(?=[=+\-@])/, ""); if (!k || !v) return;
       const parts = v.split(/\s*:::\s*/);
       if (k === "first" || k === "middle" || k === "last" || k === "name") nm[k] = v;
       else if (k === "phones" || k === "emails" || k === "links") c[k].push(...parts.flatMap(p => k === "emails" ? p.split(/[;,\s]+/) : [p]));
@@ -690,10 +756,31 @@ function rowsToContacts(rows) {
     return clean(c);
   }).filter(c => c.name || c.company || c.emails.length);
 }
+// Old Android / Outlook vCards: N;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:=D0=98=D0=B2=D0=B0=D0=BD
+function qpDecode(s, charset) {
+  const bytes = [];
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "=" && /^[0-9A-Fa-f]{2}$/.test(s.substr(i + 1, 2))) { bytes.push(parseInt(s.substr(i + 1, 2), 16)); i += 2; }
+    else bytes.push(...new TextEncoder().encode(s[i]));
+  }
+  try { return new TextDecoder(charset || "utf-8").decode(new Uint8Array(bytes)); }
+  catch { return new TextDecoder("utf-8").decode(new Uint8Array(bytes)); }
+}
 function parseVCF(text) {
-  const lines = text.replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "").split(/\r?\n/);
+  const raw = text.replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "").split(/\r?\n/);
+  const isQP = l => /ENCODING=QUOTED-PRINTABLE/i.test(l.slice(0, Math.max(0, l.indexOf(":"))));
+  const lines = [];
+  for (let i = 0; i < raw.length; i++) {
+    let l = raw[i];
+    if (isQP(l)) while (l.endsWith("=") && i + 1 < raw.length) l = l.slice(0, -1) + raw[++i]; // QP soft line breaks
+    lines.push(l);
+  }
   const out = []; let c = null;
-  const val = l => l.slice(l.indexOf(":") + 1).replace(/\\n/gi, "\n").replace(/\\([,;\\])/g, "$1").trim();
+  const val = l => {
+    const at = l.indexOf(":"); let v = l.slice(at + 1);
+    if (isQP(l)) v = qpDecode(v, (/CHARSET=([^;:]+)/i.exec(l.slice(0, at)) || [])[1]);
+    return v.replace(/\\n/gi, "\n").replace(/\\([,;\\])/g, "$1").trim();
+  };
   for (const l of lines) {
     const key = l.split(":")[0].split(";")[0].toUpperCase().replace(/^ITEM\d+\./, "");
     if (key === "BEGIN") c = { phones: [], emails: [], links: [], tags: [] };
@@ -776,7 +863,8 @@ function openExport() {
       let data;
       if (fmt === "csv") {
         const cols = ["name", "company", "position", "phones", "emails", "country", "city", "links", "tags", "notes"];
-        const cell = v => { v = Array.isArray(v) ? v.join(", ") : String(v ?? ""); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+        // A leading ' stops Excel from treating "+7 900…" or "=…" as a formula (#NAME?, CSV injection); import strips it back
+        const cell = v => { v = Array.isArray(v) ? v.join(", ") : String(v ?? ""); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[;"\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
         data = "\uFEFF" + ["Имя;Компания;Должность;Телефоны;Почта;Страна;Город;Ссылки;Теги;Заметки", ...list.map(c => cols.map(k => cell(c[k])).join(";"))].join("\r\n");
       } else if (fmt === "vcf") {
         const e = s => String(s || "").replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/([,;])/g, "\\$1");
@@ -1134,7 +1222,10 @@ $("#btnEnrich").onclick = openEnrich;
 $("#q").addEventListener("input", e => { state.q = e.target.value; if (state.ai && !state.ai.loading) state.ai = null; renderAnswer(); renderList(); });
 $("#askForm").onsubmit = e => { e.preventDefault(); const q = $("#q").value.trim(); if (q && sample) askAI(q); };
 $$("[data-ex]").forEach(b => b.onclick = () => { $("#q").value = b.dataset.ex; state.q = ""; askAI(b.dataset.ex); });
-window.addEventListener("resize", () => renderDetail());
+// Redraw the card only when the layout switches between phone and desktop: on a phone the
+// on-screen keyboard fires resize, and a full redraw used to wipe the history field being typed in
+let wideLayout = window.innerWidth >= 900;
+window.addEventListener("resize", () => { const w = window.innerWidth >= 900; if (w !== wideLayout) { wideLayout = w; renderDetail(); } });
 
 function enableAI() {
   const on = !!sample;

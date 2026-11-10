@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b6e69">
+  <meta name="description" content="Личная телефонная книга, работающая офлайн на этом устройстве.">
+  <title>ИИ Телефонная книга</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div><p class="eyebrow">Личная адресная книга</p><h1>Телефонная книга</h1></div>
+    <div class="toolbar">
+      <button class="button secondary" id="installBtn" type="button" hidden>Установить</button>
+      <button class="button secondary" id="importBtn" type="button">Импорт</button>
+      <button class="button secondary" id="exportBtn" type="button">Экспорт</button>
+      <button class="button primary" id="addBtn" type="button">＋ Контакт</button>
+      <input id="fileInput" type="file" accept=".json,.csv,.txt" hidden>
+    </div>
+  </header>
+  <main>
+    <p class="notice" id="storageNotice">Контакты хранятся только в этом браузере на устройстве. ИИ-поиск и синхронизация пока не подключены.</p>
+    <section class="searchbar" aria-label="Поиск по контактам">
+      <label class="sr-only" for="search">Поиск по имени, компании, телефону или заметкам</label>
+      <span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Имя, компания, телефон или заметка…" autocomplete="off">
+      <span class="count" id="count" aria-live="polite"></span>
+    </section>
+    <div class="layout">
+      <section class="contact-list" aria-label="Контакты"><div id="list"></div></section>
+      <section class="detail" id="detail" aria-live="polite"><div class="empty">Выберите контакт или добавьте новый.</div></section>
+    </div>
+  </main>
+  <dialog id="editor">
+    <form id="contactForm" method="dialog">
+      <div class="dialog-head"><h2 id="formTitle">Новый контакт</h2><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></div>
+      <input id="contactId" type="hidden">
+      <label>Имя и фамилия<input id="name" name="name" maxlength="160" autocomplete="name"></label>
+      <label>Компания<input id="company" name="company" maxlength="160" autocomplete="organization"></label>
+      <label>Должность<input id="position" name="position" maxlength="160"></label>
+      <label>Телефоны <span class="hint">по одному на строку</span><textarea id="phones" rows="2" maxlength="1000" autocomplete="tel"></textarea></label>
+      <label>Электронная почта <span class="hint">по одному на строку</span><textarea id="emails" rows="2" maxlength="1000" autocomplete="email"></textarea></label>
+      <div class="two-col"><label>Город<input id="city" maxlength="100" autocomplete="address-level2"></label><label>Страна<input id="country" maxlength="100" autocomplete="country-name"></label></div>
+      <label>Ссылки <span class="hint">по одной на строку</span><textarea id="links" rows="2" maxlength="2000" placeholder="https://…"></textarea></label>
+      <label>Теги <span class="hint">через запятую</span><input id="tags" maxlength="500"></label>
+      <label>Заметки<textarea id="notes" rows="3" maxlength="4000"></textarea></label>
+      <div class="dialog-actions"><button class="button secondary" value="cancel">Отмена</button><button class="button primary" id="saveBtn" value="save">Сохранить</button></div>
+      <p class="form-error" id="formError" role="alert"></p>
+    </form>
+  </dialog>
+  <dialog id="confirmDelete" class="small-dialog">
+    <form method="dialog"><h2>Удалить контакт?</h2><p>Это действие нельзя отменить.</p><div class="dialog-actions"><button class="button secondary" value="cancel">Отмена</button><button class="button danger" id="confirmDeleteBtn" value="delete">Удалить</button></div></form>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -37,16 +37,16 @@
   <dialog id="editor">
     <form id="contactForm" method="dialog">
       <div class="dialog-head"><h2 id="formTitle">Новый контакт</h2><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></div>
-      <input id="contactId" type="hidden">
+      <input id="contactId" name="id" type="hidden">
       <label>Имя и фамилия<input id="name" name="name" maxlength="160" autocomplete="name"></label>
       <label>Компания<input id="company" name="company" maxlength="160" autocomplete="organization"></label>
       <label>Должность<input id="position" name="position" maxlength="160"></label>
-      <label>Телефоны <span class="hint">по одному на строку</span><textarea id="phones" rows="2" maxlength="1000" autocomplete="tel"></textarea></label>
-      <label>Электронная почта <span class="hint">по одному на строку</span><textarea id="emails" rows="2" maxlength="1000" autocomplete="email"></textarea></label>
-      <div class="two-col"><label>Город<input id="city" maxlength="100" autocomplete="address-level2"></label><label>Страна<input id="country" maxlength="100" autocomplete="country-name"></label></div>
-      <label>Ссылки <span class="hint">по одной на строку</span><textarea id="links" rows="2" maxlength="2000" placeholder="https://…"></textarea></label>
-      <label>Теги <span class="hint">через запятую</span><input id="tags" maxlength="500"></label>
-      <label>Заметки<textarea id="notes" rows="3" maxlength="4000"></textarea></label>
+      <label>Телефоны <span class="hint">по одному на строку</span><textarea id="phones" name="phones" rows="2" maxlength="1000" autocomplete="tel"></textarea></label>
+      <label>Электронная почта <span class="hint">по одному на строку</span><textarea id="emails" name="emails" rows="2" maxlength="1000" autocomplete="email"></textarea></label>
+      <div class="two-col"><label>Город<input id="city" name="city" maxlength="100" autocomplete="address-level2"></label><label>Страна<input id="country" name="country" maxlength="100" autocomplete="country-name"></label></div>
+      <label>Ссылки <span class="hint">по одной на строку</span><textarea id="links" name="links" rows="2" maxlength="2000" placeholder="https://…"></textarea></label>
+      <label>Теги <span class="hint">через запятую</span><input id="tags" name="tags" maxlength="500"></label>
+      <label>Заметки<textarea id="notes" name="notes" rows="3" maxlength="4000"></textarea></label>
       <div class="dialog-actions"><button class="button secondary" value="cancel">Отмена</button><button class="button primary" id="saveBtn" value="save">Сохранить</button></div>
       <p class="form-error" id="formError" role="alert"></p>
     </form>

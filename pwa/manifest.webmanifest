@@ -1,0 +1,16 @@
+{
+  "id": "ai-phonebook-pwa",
+  "name": "ИИ Телефонная книга",
+  "short_name": "Телефонная книга",
+  "description": "Личная адресная книга, работающая офлайн на этом устройстве.",
+  "lang": "ru",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0b6e69",
+  "background_color": "#edf0f3",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
